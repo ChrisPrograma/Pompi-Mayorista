@@ -16,7 +16,7 @@ export default defineConfig({
       name: 'copiar-archivos-pwa',
       apply: 'build',
       generateBundle() {
-        const { readFileSync } = require('node:fs');
+        const { readFileSync } = process.getBuiltinModule('node:fs');
         for (const archivo of ['sw.js', 'icono-192.png', 'icono-512.png']) {
           this.emitFile({
             type: 'asset',
