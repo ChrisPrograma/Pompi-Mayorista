@@ -26,12 +26,15 @@ export interface Acciones {
   cargar: (movs: { productoId: Uuid; cantidad: number }[]) => void;
   entrar: (proveedorId: Uuid, items: { productoId: Uuid; cantidad: number; costoUnitarioCent: Cent }[], condicion: 'contado' | 'cuenta') => void;
   verProducto: (p: ProductoVista) => void;
+  nuevoCliente: (origen: 'vender' | 'clientes') => void;
 }
 
 interface Props {
   estado: EstadoApp;
   hoy: string;
   acc: Acciones;
+  /** Comercio recién dado de alta: la venta arranca directamente con él elegido. */
+  clienteInicial?: Uuid | null;
 }
 
 const Volver = ({ acc }: { acc: Acciones }) => (
@@ -167,9 +170,9 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
 // ---------------------------------------------------------------------------
 // Vender
 // ---------------------------------------------------------------------------
-export const PantallaVender = ({ estado, hoy, acc }: Props) => {
-  const [paso, setPaso] = useState(1);
-  const [clienteId, setClienteId] = useState<Uuid | null>(null);
+export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
+  const [paso, setPaso] = useState(clienteInicial ? 2 : 1);
+  const [clienteId, setClienteId] = useState<Uuid | null>(clienteInicial ?? null);
   const [items, setItems] = useState<Record<Uuid, number>>({});
   const [forma, setForma] = useState<'efectivo' | 'transferencia' | 'cuenta' | null>(null);
 
@@ -205,6 +208,14 @@ export const PantallaVender = ({ estado, hoy, acc }: Props) => {
               </button>
             );
           })}
+
+          <button className="row" onClick={() => acc.nuevoCliente('vender')}>
+            <span className="thumb c-juguete"><Icono id="i-plus" /></span>
+            <span className="row-main">
+              <b>Es un comercio nuevo</b>
+              <span>Lo cargás en diez segundos y seguís con la venta</span>
+            </span>
+          </button>
         </div>
       </div>
     );
@@ -682,6 +693,13 @@ export const PantallaClientes = ({ estado, hoy, acc }: Props) => {
     <div className="view">
       <Volver acc={acc} />
       <div className="section-h"><h2>Mis clientes</h2><span className="hint">{estado.clientes.length} comercios</span></div>
+
+      <button className="second-action" onClick={() => acc.nuevoCliente('clientes')}>
+        <span className="circ"><Icono id="i-plus" /></span>
+        <span><b>Agregar un comercio</b><span>Solo hace falta el nombre</span></span>
+        <Icono id="i-arrow" clase="ico-arrow ico-s" />
+      </button>
+
       <div className="stack">
         {estado.clientes.filter((c) => c.activo).map((c) => {
           const d = deudas.lista.find((x) => x.clienteId === c.id);

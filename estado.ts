@@ -66,6 +66,7 @@ export interface Ctx {
 
 /** Lo que una acción produce: filas nuevas para agregar, nunca campos para pisar. */
 export interface Resultado {
+  clientes?: Cliente[];
   ventas?: Venta[];
   compras?: Compra[];
   movimientos?: MovimientoStock[];
@@ -101,6 +102,42 @@ export const costoDe = (e: EstadoApp, productoId: Uuid): Cent | null => {
 // ---------------------------------------------------------------------------
 // Acciones
 // ---------------------------------------------------------------------------
+
+/**
+ * Alta de un comercio.
+ *
+ * Lo mínimo indispensable: el nombre. Todo lo demás es opcional, porque el alta
+ * pasa parado en la vereda con el cliente esperando. Los datos que falten se
+ * completan después, desde la ficha.
+ */
+export const altaCliente = (
+  e: EstadoApp,
+  args: { nombre: string; zona?: string; diaVisita?: number },
+  ctx: Ctx,
+): Resultado => {
+  const nombre = args.nombre.trim();
+  if (!nombre) throw new Error('El comercio necesita un nombre');
+
+  const zona = args.zona?.trim();
+
+  return {
+    clientes: [{
+      id: ctx.nuevoId(),
+      negocioId: e.negocioId,
+      nombre,
+      ...(zona ? { zona } : {}),
+      ...(args.diaVisita !== undefined ? { diaVisita: args.diaVisita } : {}),
+      activo: true,
+    }],
+  };
+};
+
+/** ¿Ya existe un comercio con ese nombre? Para avisar antes de duplicar. */
+export const clienteParecido = (e: EstadoApp, nombre: string): Cliente | null => {
+  const n = nombre.trim().toLowerCase();
+  if (!n) return null;
+  return e.clientes.find((c) => c.activo && c.nombre.trim().toLowerCase() === n) ?? null;
+};
 
 /** Vender: una venta, sus líneas con precio y costo congelados, y la salida del auto. */
 export const vender = (
@@ -336,6 +373,7 @@ const fusionar = <T extends { id: Uuid }>(actuales: T[], nuevos?: T[]): T[] => {
 
 export const aplicar = (e: EstadoApp, r: Resultado): EstadoApp => ({
   ...e,
+  clientes: fusionar(e.clientes, r.clientes),
   ventas: fusionar(e.ventas, r.ventas),
   compras: fusionar(e.compras, r.compras),
   movimientos: fusionar(e.movimientos, r.movimientos),

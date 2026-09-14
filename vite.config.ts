@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -16,8 +17,11 @@ export default defineConfig({
       name: 'copiar-archivos-pwa',
       apply: 'build',
       generateBundle() {
-        const { readFileSync } = process.getBuiltinModule('node:fs');
-        for (const archivo of ['sw.js', 'icono-192.png', 'icono-512.png']) {
+        // El import va ARRIBA, no acá adentro: Vite compila este archivo a ESM,
+        // donde `require` no existe. Un require() dentro del hook rompe el build
+        // recién en el último paso, con 48 módulos ya transformados.
+        for (const archivo of ['sw.js', 'icono-192.png', 'icono-512.png', '_headers']) {
+          if (!existsSync(archivo)) continue;   // falta uno: se avisa, no se rompe
           this.emitFile({
             type: 'asset',
             fileName: archivo,

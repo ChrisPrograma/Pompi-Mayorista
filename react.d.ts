@@ -19,6 +19,9 @@ declare namespace JSX {
   interface Element extends ElementoReact {}
   interface ElementAttributesProperty { props: {}; }
   interface ElementChildrenAttribute { children: {}; }
+  /** `key` y `ref` los agrega React a cualquier componente; sin esto, usarlos da error. */
+  interface IntrinsicAttributes { key?: string | number | null }
+  interface IntrinsicClassAttributes<T> { ref?: unknown }
 }
 
 declare module 'react' {

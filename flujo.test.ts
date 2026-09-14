@@ -11,9 +11,11 @@ import { pesos } from '../../domain/money.ts';
 import { calcularStock } from '../../domain/stock.ts';
 import { saldoCliente } from '../../domain/saldos.ts';
 import {
+  altaCliente,
   aplicar,
   aplicarSugerencias,
   cargarAuto,
+  clienteParecido,
   cobrar,
   costoDe,
   descartarSugerencias,
@@ -72,6 +74,73 @@ describe('vender', () => {
     expect(() =>
       vender(sinPrecio, { clienteId: 'c1', items: [{ productoId: 'p1', cantidad: 1 }], formaPago: 'efectivo' }, ctx()),
     ).toThrow(/precio vigente/i);
+  });
+});
+
+describe('alta de comercios', () => {
+  it('con el nombre alcanza: el resto es opcional', () => {
+    const e0 = construirSemilla(HOY);
+    const e1 = aplicar(e0, altaCliente(e0, { nombre: '  Pet Shop La Plaza  ' }, ctx()));
+    const nuevo = e1.clientes.at(-1)!;
+
+    expect(e1.clientes).toHaveLength(e0.clientes.length + 1);
+    expect(nuevo.nombre).toBe('Pet Shop La Plaza');   // recortado
+    expect(nuevo.activo).toBe(true);
+    expect(nuevo.zona).toBeUndefined();
+    expect(nuevo.diaVisita).toBeUndefined();
+  });
+
+  it('guarda zona y día de visita cuando los cargan', () => {
+    const e0 = construirSemilla(HOY);
+    const e1 = aplicar(e0, altaCliente(e0,
+      { nombre: 'Vet. del Parque', zona: 'Ciudadela', diaVisita: 4 }, ctx()));
+    const nuevo = e1.clientes.at(-1)!;
+
+    expect(nuevo.zona).toBe('Ciudadela');
+    expect(nuevo.diaVisita).toBe(4);
+  });
+
+  it('un comercio nuevo aparece en la ruta del día que le tocó', () => {
+    const e0 = construirSemilla(HOY);            // HOY es martes (día 2)
+    const e1 = aplicar(e0, altaCliente(e0,
+      { nombre: 'Forrajería Nueva', zona: 'Padua', diaVisita: 2 }, ctx()));
+
+    const enRuta = vistaHoy(e1, HOY).ruta.map((r) => r.nombre);
+    expect(enRuta).toContain('Forrajería Nueva');
+  });
+
+  it('se le puede vender apenas queda cargado', () => {
+    let e = construirSemilla(HOY);
+    e = aplicar(e, altaCliente(e, { nombre: 'Pet Shop Recién Abierto' }, ctx()));
+    const nuevo = e.clientes.at(-1)!;
+
+    e = aplicar(e, vender(e, {
+      clienteId: nuevo.id,
+      items: [{ productoId: 'p1', cantidad: 5 }],
+      formaPago: 'cuenta',
+    }, ctx()));
+
+    const deuda = vistaDeudas(e, HOY).lista.find((d) => d.clienteId === nuevo.id);
+    expect(deuda?.saldoCent).toBe(pesos(3200) * 5);
+  });
+
+  it('rechaza un nombre vacío en vez de crear un comercio sin nombre', () => {
+    const e0 = construirSemilla(HOY);
+    expect(() => altaCliente(e0, { nombre: '   ' }, ctx())).toThrow(/nombre/i);
+  });
+
+  it('avisa si ya hay un comercio con ese nombre, sin bloquearlo', () => {
+    const e0 = construirSemilla(HOY);
+    expect(clienteParecido(e0, 'pet shop huellitas')!.id).toBe('c1');
+    expect(clienteParecido(e0, '  Mascotas del Oeste ')!.id).toBe('c2');
+    expect(clienteParecido(e0, 'Forrajería Inexistente')).toBeNull();
+  });
+
+  it('un alta repetida por un reintento no duplica el comercio', () => {
+    const e0 = construirSemilla(HOY);
+    const r = altaCliente(e0, { nombre: 'Pet Shop Doble' }, ctx());
+    const e1 = aplicar(aplicar(e0, r), r);        // el mismo resultado, dos veces
+    expect(e1.clientes.filter((c) => c.nombre === 'Pet Shop Doble')).toHaveLength(1);
   });
 });
 

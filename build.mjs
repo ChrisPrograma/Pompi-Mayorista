@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 
 const SALIDA = 'dist';
-const SUELTOS = ['sw.js', 'icono-192.png', 'icono-512.png'];
+const SUELTOS = ['sw.js', 'icono-192.png', 'icono-512.png', '_headers'];
 
 if (existsSync(SALIDA)) rmSync(SALIDA, { recursive: true });
 mkdirSync(SALIDA, { recursive: true });

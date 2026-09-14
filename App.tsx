@@ -1,17 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { uuidv7 } from '../lib/uuid.ts';
 import { pesos, type Cent } from '../domain/money.ts';
 import type { Uuid } from '../domain/types.ts';
 import {
-  aplicar, aplicarSugerencias, cargarAuto, cobrar, descartarSugerencias,
-  entrarMercaderia, vender, type Ctx, type EstadoApp, type Resultado,
+  altaCliente, aplicar, aplicarSugerencias, cargarAuto, clienteParecido, cobrar,
+  descartarSugerencias, entrarMercaderia, vender, type Ctx, type EstadoApp, type Resultado,
 } from '../app/estado.ts';
 import { construirSemilla } from '../app/semilla.ts';
 import { cargarEstado, guardarEstado, almacenCola } from '../data/local.ts';
 import { Cola, type Operacion } from '../data/outbox.ts';
 import { hayBackend, transporte } from '../data/servidor.ts';
 import { sugerenciasPendientes, vistaDeudas, type ProductoVista } from './vistas.ts';
-import { Exito, Hoja, Icono, plata, type DatosExito } from './componentes.tsx';
+import { Alerta, Exito, Hoja, Icono, plata, type DatosExito } from './componentes.tsx';
 import {
   PantallaAuto, PantallaClientes, PantallaCosas, PantallaDeudas, PantallaHoy,
   PantallaIngreso, PantallaNumeros, PantallaProductos, PantallaProveedores,
@@ -31,6 +31,12 @@ const PADRE: Partial<Record<Ruta, Ruta>> = {
   ingreso: 'cosas', proveedores: 'cosas',
 };
 
+/** Días como los nombra él, no como los numera el sistema. */
+const DIAS_VISITA: { n: number; texto: string }[] = [
+  { n: 1, texto: 'Lunes' }, { n: 2, texto: 'Martes' }, { n: 3, texto: 'Miércoles' },
+  { n: 4, texto: 'Jueves' }, { n: 5, texto: 'Viernes' }, { n: 6, texto: 'Sábado' },
+];
+
 const cola = new Cola(almacenCola, transporte);
 
 export const App = () => {
@@ -40,6 +46,11 @@ export const App = () => {
   const [hojaCobro, setHojaCobro] = useState<Uuid | null>(null);
   const [hojaProducto, setHojaProducto] = useState<ProductoVista | null>(null);
   const [hojaPrecios, setHojaPrecios] = useState(false);
+  const [hojaCliente, setHojaCliente] = useState<'vender' | 'clientes' | null>(null);
+  const [clientePre, setClientePre] = useState<Uuid | null>(null);
+  const [nuevoNombre, setNuevoNombre] = useState('');
+  const [nuevaZona, setNuevaZona] = useState('');
+  const [nuevoDia, setNuevoDia] = useState<number | null>(null);
   const [sinSubir, setSinSubir] = useState(0);
   const hoy = useMemo(() => new Date().toISOString(), [estado]);
   const montoCobro = useRef<HTMLInputElement>(null);
@@ -96,8 +107,18 @@ export const App = () => {
   const pendientes = sugerenciasPendientes(estado);
 
   // ---- acciones ------------------------------------------------------------
+  const irA = (r: Ruta) => {
+    if (r !== 'vender') setClientePre(null);
+    setRuta(r);
+  };
+
   const acc: Acciones = {
-    ir: (r) => setRuta(r),
+    ir: irA,
+
+    nuevoCliente: (origen) => {
+      setNuevoNombre(''); setNuevaZona(''); setNuevoDia(null);
+      setHojaCliente(origen);
+    },
 
     vender: (clienteId, items, forma) => {
       const c = ctx();
@@ -128,6 +149,7 @@ export const App = () => {
           : [{ etiqueta: 'Cobraste', valor: plata(v.totalCent) },
              { etiqueta: 'Productos', valor: `${items.reduce((a, i) => a + i.cantidad, 0)} u.` }],
       });
+      setClientePre(null);
       setRuta('hoy');
     },
 
@@ -194,6 +216,42 @@ export const App = () => {
     },
 
     verProducto: (p) => setHojaProducto(p),
+  };
+
+  const guardarCliente = () => {
+    const origen = hojaCliente;
+    const r = altaCliente(estado, {
+      nombre: nuevoNombre,
+      zona: nuevaZona || undefined,
+      diaVisita: nuevoDia ?? undefined,
+    }, ctx());
+    const c = r.clientes![0];
+
+    void despachar(r, [{
+      tipo: 'alta_cliente', id: c.id,
+      payload: {
+        negocio_id: estado.negocioId,
+        nombre: c.nombre,
+        zona: c.zona ?? null,
+        dia_visita: c.diaVisita ?? null,
+        activo: true,
+      },
+    }]);
+
+    setHojaCliente(null);
+
+    if (origen === 'vender') {
+      // Venía en medio de una venta: se sigue con el comercio recién cargado.
+      setClientePre(c.id);
+      setRuta('vender');
+    } else {
+      setExito({
+        titulo: 'Comercio agregado',
+        monto: c.nombre,
+        texto: 'Ya podés venderle y llevarle la cuenta de lo que te deba.',
+        deltas: [{ etiqueta: 'Tus comercios', valor: String(estado.clientes.length + 1) }],
+      });
+    }
   };
 
   const confirmarCobro = (clienteId: Uuid, montoCent: Cent) => {
@@ -286,7 +344,10 @@ export const App = () => {
       </header>
 
       <main>
-        <Pantalla estado={estado} hoy={hoy} acc={acc} />
+        <Pantalla
+          key={ruta === 'vender' ? `vender-${clientePre ?? 'inicio'}` : ruta}
+          estado={estado} hoy={hoy} acc={acc}
+          clienteInicial={ruta === 'vender' ? clientePre : null} />
         {sinSubir > 0 && (
           <p className="sincro pend">
             <Icono id="i-cloud" /> {sinSubir} {sinSubir === 1 ? 'operación' : 'operaciones'} sin subir · se suben solas cuando haya señal
@@ -297,7 +358,7 @@ export const App = () => {
       <nav className="tabbar">
         {TABS.map((t) => (
           <button key={t.id} className={`tab ${t.venta ? 'sell' : ''}`}
-            aria-current={rutaActiva === t.id} onClick={() => setRuta(t.id)}>
+            aria-current={rutaActiva === t.id} onClick={() => irA(t.id)}>
             <Icono id={t.icono} /><span>{t.texto}</span>
           </button>
         ))}
@@ -404,6 +465,56 @@ export const App = () => {
             onClick={() => resolverPrecios(false)}>Los dejo como están</button>
         </Hoja>
       )}
+
+      {hojaCliente && (() => {
+        const repetido = clienteParecido(estado, nuevoNombre);
+        return (
+          <Hoja alCerrar={() => setHojaCliente(null)}>
+            <h3>Comercio nuevo</h3>
+            <p className="sub">Con el nombre alcanza. El resto lo completás cuando tengas tiempo.</p>
+
+            <label className="campo">
+              <span>¿Cómo se llama?</span>
+              <input className="texto" id="cliente-nombre" autoFocus value={nuevoNombre}
+                placeholder="Pet Shop Huellitas"
+                onChange={(ev: ChangeEvent<HTMLInputElement>) => setNuevoNombre(ev.target.value)} />
+            </label>
+
+            {repetido && (
+              <div style={{ marginBottom: 14 }}>
+                <Alerta tipo="warn" icono="i-alert"
+                  titulo="Ya tenés un comercio con ese nombre"
+                  texto="Fijate que no lo estés cargando dos veces." />
+              </div>
+            )}
+
+            <label className="campo">
+              <span>¿En qué zona está? <em>· opcional</em></span>
+              <input className="texto" id="cliente-zona" value={nuevaZona}
+                placeholder="Morón"
+                onChange={(ev: ChangeEvent<HTMLInputElement>) => setNuevaZona(ev.target.value)} />
+            </label>
+
+            <div className="campo">
+              <span>¿Qué día lo visitás? <em>· opcional</em></span>
+              <div className="chips">
+                {DIAS_VISITA.map((d) => (
+                  <button key={d.n} className="chip" aria-pressed={nuevoDia === d.n}
+                    onClick={() => setNuevoDia(nuevoDia === d.n ? null : d.n)}>
+                    {d.texto}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button className="btn lg block" disabled={!nuevoNombre.trim()} onClick={guardarCliente}>
+              {hojaCliente === 'vender' ? 'Guardar y seguir con la venta' : 'Guardar comercio'}
+            </button>
+            <button className="btn outline block" style={{ marginTop: 9 }}
+              onClick={() => setHojaCliente(null)}>Cancelar</button>
+          </Hoja>
+        );
+      })()}
 
       {exito && <Exito datos={exito} alCerrar={() => setExito(null)} />}
     </div>

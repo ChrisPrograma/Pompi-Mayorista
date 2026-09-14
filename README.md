@@ -64,14 +64,18 @@ src/domain/              Lógica pura, sin dependencias.       28 tests
   precios.ts             Los tres costos, sugerencia de precio, cerrar-y-abrir, ganancia.
   saldos.ts              Cuenta corriente con imputación FIFO.
 
-src/app/                 Estado como log + acciones del usuario. 17 tests
-  estado.ts              vender, entrarMercaderia, cargarAuto, cobrar, aplicarSugerencias.
+src/app/                 Estado como log + acciones del usuario. 24 tests
+  estado.ts              altaCliente, vender, entrarMercaderia, cargarAuto, cobrar, aplicarSugerencias.
   semilla.ts             Datos de ejemplo del rubro, construidos como los construiría el sistema.
+
+src/lib/
+  uuid.ts                UUID v7 propio, ordenable por tiempo.
 
 src/data/
   outbox.ts              Cola de salida para trabajar sin señal.
-  local.ts               IndexedDB (Dexie).
-  servidor.ts            Transporte contra Supabase.
+  idb.ts                 Envoltorio mínimo de IndexedDB (reemplaza a Dexie).
+  local.ts               El log, guardado en el dispositivo.
+  servidor.ts            Transporte contra Supabase, con fetch.
 
 src/ui/
   vistas.ts              Qué muestra cada pantalla. Puro y testeado.
@@ -93,7 +97,7 @@ npm run test:node # sin npm: runner nativo de Node + shim (ver docs/como-ejecuta
 npm run verificar # chequea imports y exports sin compilador
 ```
 
-**45 tests, 45 en verde.** Los que más importan están en
+**52 tests, 52 en verde.** Los que más importan están en
 `src/domain/__tests__/regla-cero.test.ts`: no prueban funciones, prueban que el sistema **no puede**
 cometer los errores típicos.
 
@@ -113,7 +117,7 @@ cobrar, entrar mercadería más cara, decidir sobre los precios.
 |---|---|
 | Modelo de datos y migraciones | Completas, **no ejecutadas** contra un Postgres real |
 | Dominio, acciones y modelos de vista | **Verificados**, 45 tests |
-| Tipos de TypeScript | **Sin errores** (`tsc`) |
+| Tipos de TypeScript | **Sin errores** (`tsc`, verificado también en el build de Netlify con los @types reales) |
 | Build de producción | **Compila**: 286 kB en `dist/` |
 | La app en un navegador real | **Probada de punta a punta**: vender, cobrar, entrar mercadería, números |
 | Cola de sincronización | Escrita, sin probar contra un servidor |
