@@ -1,0 +1,36 @@
+# Configuración para Netlify cuando se despliega conectando el repositorio.
+# Si en cambio arrastrás la carpeta dist/ a netlify.com/drop, lo que manda es
+# el archivo _headers que va adentro de dist/.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# La app es una sola página: cualquier ruta devuelve index.html.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/index-*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/index-*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

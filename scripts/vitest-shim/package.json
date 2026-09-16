@@ -1,0 +1,9 @@
+{
+  "name": "vitest",
+  "version": "0.0.0-shim-local",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  }
+}

@@ -1,0 +1,32 @@
+# Cabeceras para Netlify. Este archivo se copia dentro de dist/ y se sube con el resto.
+#
+# La regla de fondo: los archivos con hash en el nombre se cachean para siempre,
+# y los que NO tienen hash (index.html, sw.js, manifest) nunca.
+#
+# Si el service worker se cachea, el cliente se queda con una versión vieja de la
+# app y no hay forma de actualizarlo a distancia. En una app que usa alguien que
+# no va a saber "borrar el caché del navegador", eso es fatal.
+
+/index.html
+  Cache-Control: no-cache
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/sw.js
+  Cache-Control: no-cache
+  Service-Worker-Allowed: /
+
+/*.webmanifest
+  Cache-Control: no-cache
+  Content-Type: application/manifest+json
+
+# Archivos con hash en el nombre: cambian de nombre al cambiar de contenido,
+# así que se pueden cachear un año sin riesgo.
+/index-*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/index-*.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/icono-*.png
+  Cache-Control: public, max-age=2592000
