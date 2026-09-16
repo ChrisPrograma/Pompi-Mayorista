@@ -1,0 +1,10 @@
+{
+  "//": "Chequeo de tipos en un entorno sin npm: usa declaraciones mínimas de React (scripts/tipos-minimos) y saltea los tests, que necesitan los tipos de vitest. En una máquina con las dependencias instaladas se usa el tsconfig.json normal con `npm run typecheck`.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [],
+    "skipLibCheck": true
+  },
+  "include": ["src", "scripts/tipos-minimos"],
+  "exclude": ["src/**/__tests__/**"]
+}
