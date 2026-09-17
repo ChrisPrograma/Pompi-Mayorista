@@ -24,8 +24,19 @@ export type MedioPago = 'efectivo' | 'transferencia' | 'cheque' | 'otro';
 export interface Producto {
   id: Uuid;
   negocioId: Uuid;
+  /**
+   * El código con el que él identifica el producto en su planilla (101, 105…).
+   *
+   * Texto y no número: en la planilla puede haber códigos con cero adelante, y
+   * "0110" y "110" son dos productos distintos para quien los lee. Un número se
+   * comería ese cero sin avisar. Único dentro del negocio.
+   */
+  codigo?: string;
   nombre: string;
+  /** Calificador corto: "Talle 2 · surtido". Se usa para detectar duplicados. */
   variante?: string;
+  /** Texto libre y largo. Es otra cosa que `variante`. */
+  descripcion?: string;
   categoria?: string;
   proveedorId?: Uuid;
   unidad: string;
@@ -39,7 +50,10 @@ export interface Cliente {
   id: Uuid;
   negocioId: Uuid;
   nombre: string;
+  /** Dónde está. En la app se muestra como "Ubicación". */
   zona?: string;
+  /** Veterinaria, pet shop, forrajería. Sirve para ordenar y agrupar. */
+  rubro?: string;
   /** Teléfono, WhatsApp o lo que sirva para ubicarlo. Texto libre a propósito. */
   contacto?: string;
   /** 0 = domingo */
@@ -57,6 +71,9 @@ export interface Proveedor {
   id: Uuid;
   negocioId: Uuid;
   nombre: string;
+  /** Dónde está. Se llama igual que en `Cliente` para que ordenar por
+   *  ubicación sea una sola idea y no dos. */
+  zona?: string;
   rubro?: string;
   contacto?: string;
   activo: boolean;

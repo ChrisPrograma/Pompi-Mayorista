@@ -14,7 +14,7 @@
 import { describe, expect, it } from 'vitest';
 import { altaCliente, altaProducto, altaProveedor, aplicar, estadoVacio, vender } from '../estado.ts';
 import { construirSemilla, idsSecuenciales } from '../semilla.ts';
-import { esDatosDeEjemplo, sinDatosDeEjemplo } from '../limpieza.ts';
+import { esDatosDeEjemplo, esIdReal, sinDatosDeEjemplo } from '../limpieza.ts';
 import {
   sugerenciasPendientes, vistaAuto, vistaDeudas, vistaHoy, vistaNumeros,
   vistaParaVender, vistaProductos, vistaProveedores,
@@ -185,5 +185,35 @@ describe('los datos de ejemplo se reconocen para poder borrarlos', () => {
       productos: [{ id: UUID_B, negocioId: UUID_A, nombre: 'Collar de nylon reforzado', unidad: 'unidad', activo: true }],
     };
     expect(sinDatosDeEjemplo(e)).toBe(e);
+  });
+});
+
+describe('la cola de salida después de la limpieza', () => {
+  const UUID = '01a0ab4e-e3f5-7b59-92b4-4f52d481a20c';
+
+  it('una operación con id de ejemplo se reconoce como descartable', () => {
+    /*
+     * ESTE CASO APARECIÓ EN PRODUCCIÓN, no acá.
+     *
+     * Después de limpiar los datos quedaron 16 operaciones `guardar_producto`
+     * con ids `p1`, `p10`, `p11`… en estado `error`, con nueve intentos cada una
+     * y siempre la misma respuesta de Postgres:
+     *
+     *     22P02  invalid input syntax for type uuid: "p1"
+     *
+     * Son la prueba de que los datos de ejemplo NUNCA pudieron llegar al
+     * servidor: la columna `id` es de tipo uuid y no acepta "p1", por más veces
+     * que se reintente. Pero quedaban en el aparato haciendo que el cartel
+     * dijera "16 operaciones sin subir" en una app recién limpiada.
+     */
+    expect(esIdReal('p1')).toBe(false);
+    expect(esIdReal('p10')).toBe(false);
+    expect(esIdReal('s-0014')).toBe(false);
+    expect(esIdReal('c3')).toBe(false);
+  });
+
+  it('una operación de verdad NO se descarta', () => {
+    // Es la línea que separa "limpiar basura" de "perder una venta".
+    expect(esIdReal(UUID)).toBe(true);
   });
 });

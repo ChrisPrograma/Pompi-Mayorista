@@ -13,6 +13,11 @@ import {
   vistaProveedores,
   type ProductoVista,
 } from './vistas.ts';
+import {
+  ORDENES_CLIENTE, ORDENES_PRODUCTO, ORDENES_PROVEEDOR,
+  ordenarClientes, ordenarProductos, ordenarProveedores,
+  type OrdenCliente, type OrdenProducto, type OrdenProveedor,
+} from './orden.ts';
 import { Alerta, Cantidad, Icono, claseCategoria, plata, plataCorta } from './componentes.tsx';
 
 export type Ruta =
@@ -57,6 +62,36 @@ const Volver = ({ acc }: { acc: Acciones }) => (
 // ---------------------------------------------------------------------------
 // Hoy
 // ---------------------------------------------------------------------------
+/**
+ * El selector de "ordenar por".
+ *
+ * Chips y no un `<select>` a propósito: en un celular, un desplegable nativo
+ * tapa media pantalla y hay que tocar dos veces. Acá las opciones están a la
+ * vista y se cambia de orden con un toque, que es lo que va a hacer parado en la
+ * vereda buscando un producto.
+ */
+function Orden<T extends string>({ opciones, valor, alCambiar }: {
+  opciones: readonly { id: T; texto: string }[];
+  valor: T;
+  alCambiar: (v: T) => void;
+}) {
+  return (
+    <div className="orden" role="group" aria-label="Ordenar por">
+      <span className="orden-et">Ordenar por</span>
+      <div className="chips">
+        {opciones.map((o) => (
+          <button key={o.id} type="button"
+            className={`chip ${o.id === valor ? 'on' : ''}`}
+            aria-pressed={o.id === valor}
+            onClick={() => alCambiar(o.id)}>
+            {o.texto}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
   const v = useMemo(() => vistaHoy(estado, hoy), [estado, hoy]);
   const pend = sugerenciasPendientes(estado);
@@ -541,7 +576,11 @@ export const PantallaCosas = ({ estado, acc }: Props) => {
 // Productos
 // ---------------------------------------------------------------------------
 export const PantallaProductos = ({ estado, acc }: Props) => {
-  const productos = useMemo(() => vistaProductos(estado), [estado]);
+  const [orden, setOrden] = useState<OrdenProducto>('nombre');
+  const productos = useMemo(
+    () => ordenarProductos(vistaProductos(estado), orden),
+    [estado, orden],
+  );
   return (
     <div className="view">
       <Volver acc={acc} />
@@ -553,6 +592,10 @@ export const PantallaProductos = ({ estado, acc }: Props) => {
         <Icono id="i-arrow" clase="ico-arrow ico-s" />
       </button>
 
+      {productos.length > 1 && (
+        <Orden opciones={ORDENES_PRODUCTO} valor={orden} alCambiar={setOrden} />
+      )}
+
       <div className="stack" data-tour="lista-productos-todos">
         {productos.length === 0 && (
           <Alerta tipo="ok" icono="i-box" titulo="Todavía no cargaste ningún producto"
@@ -563,8 +606,8 @@ export const PantallaProductos = ({ estado, acc }: Props) => {
           <button className="row" key={p.id} onClick={() => acc.verProducto(p)}>
             <span className={`thumb ${claseCategoria(p.categoria)}`}><Icono id="i-box" /></span>
             <span className="row-main">
-              <b>{p.nombre}</b>
-              <span>{p.variante} · {p.enDeposito + p.enVehiculo} unidades</span>
+              <b>{p.codigo ? <><span className="cod">{p.codigo}</span> {p.nombre}</> : p.nombre}</b>
+              <span>{[p.variante, `${p.enDeposito + p.enVehiculo} unidades`].filter(Boolean).join(' · ')}</span>
             </span>
             <span className="row-end">
               <b>{p.precioCent !== null ? plata(p.precioCent) : '—'}</b>
@@ -819,7 +862,9 @@ export const PantallaIngreso = ({ estado, acc }: Props) => {
 // Proveedores y clientes
 // ---------------------------------------------------------------------------
 export const PantallaProveedores = ({ estado, acc }: Props) => {
+  const [orden, setOrden] = useState<OrdenProveedor>('nombre');
   const v = vistaProveedores(estado);
+  const lista = useMemo(() => ordenarProveedores(v.lista, orden), [estado, orden]);
   return (
     <div className="view">
       <Volver acc={acc} />
@@ -834,16 +879,21 @@ export const PantallaProveedores = ({ estado, acc }: Props) => {
         <Icono id="i-arrow" clase="ico-arrow ico-s" />
       </button>
 
+      {lista.length > 1 && (
+        <Orden opciones={ORDENES_PROVEEDOR} valor={orden} alCambiar={setOrden} />
+      )}
+
       <div className="stack">
-        {v.lista.length === 0 && (
+        {lista.length === 0 && (
           <Alerta tipo="ok" icono="i-store" titulo="Todavía no cargaste proveedores"
             texto="Con el nombre alcanza. Sirven para saber a quién le debés y de dónde vino cada producto."
             accion={{ texto: 'Agregar', alTocar: acc.nuevoProveedor }} />
         )}
-        {v.lista.map((p) => (
+        {lista.map((p) => (
           <button className="row" key={p.id} onClick={() => acc.verProveedor(p.id)}>
             <span className="thumb"><Icono id="i-store" /></span>
-            <span className="row-main"><b>{p.nombre}</b><span>{p.rubro} · {p.productos} productos</span></span>
+            <span className="row-main"><b>{p.nombre}</b>
+              <span>{[p.zona, p.rubro, `${p.productos} productos`].filter(Boolean).join(' · ')}</span></span>
             <span className="row-end">
               {p.deboCent > 0
                 ? <><b>{plata(p.deboCent)}</b><span className="pill warn">le debés</span></>
@@ -857,7 +907,10 @@ export const PantallaProveedores = ({ estado, acc }: Props) => {
 };
 
 export const PantallaClientes = ({ estado, hoy, acc }: Props) => {
+  const [orden, setOrden] = useState<OrdenCliente>('nombre');
   const deudas = vistaDeudas(estado, hoy);
+  const activos = estado.clientes.filter((c) => c.activo);
+  const lista = useMemo(() => ordenarClientes(activos, orden, deudas.lista), [estado, hoy, orden]);
   const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
   return (
     <div className="view">
@@ -870,13 +923,17 @@ export const PantallaClientes = ({ estado, hoy, acc }: Props) => {
         <Icono id="i-arrow" clase="ico-arrow ico-s" />
       </button>
 
+      {lista.length > 1 && (
+        <Orden opciones={ORDENES_CLIENTE} valor={orden} alCambiar={setOrden} />
+      )}
+
       <div className="stack" data-tour="lista-clientes-todos">
-        {estado.clientes.filter((c) => c.activo).length === 0 && (
+        {lista.length === 0 && (
           <Alerta tipo="ok" icono="i-store" titulo="Todavía no cargaste comercios"
             texto="Con el nombre alcanza. La zona y el día de visita los podés completar después, cuando tengas un rato."
             accion={{ texto: 'Agregar', alTocar: () => acc.nuevoCliente('clientes') }} />
         )}
-        {estado.clientes.filter((c) => c.activo).map((c) => {
+        {lista.map((c) => {
           const d = deudas.lista.find((x) => x.clienteId === c.id);
           return (
             <button className="row" key={c.id} onClick={() => acc.verCliente(c.id)}>
@@ -884,7 +941,7 @@ export const PantallaClientes = ({ estado, hoy, acc }: Props) => {
               <span className="row-main">
                 <b>{c.nombre}</b>
                 <span>
-                  {[c.zona, c.diaVisita !== undefined ? `lo visitás los ${DIAS[c.diaVisita]}` : null, c.contacto]
+                  {[c.zona, c.rubro, c.diaVisita !== undefined ? `lo visitás los ${DIAS[c.diaVisita]}` : null, c.contacto]
                     .filter(Boolean).join(' · ')}
                 </span>
               </span>

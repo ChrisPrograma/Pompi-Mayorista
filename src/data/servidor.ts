@@ -128,13 +128,57 @@ export const reclamarNegocio = async (): Promise<string | null> => {
   } catch (e) {
     const mensaje = e instanceof ErrorServidor ? e.message : '';
     if (mensaje.includes('ya tiene due')) {
-      return 'Este sistema ya tiene dueño. Tu cuenta quedó creada pero sin acceso: '
-        + 'pedile al que administra la app que te dé permiso.';
+      return 'Tu cuenta quedó creada, pero este mail todavía no tiene permiso para entrar. '
+        + 'Pedile al dueño que lo agregue desde Mi cuenta → Quién puede entrar.';
     }
     // Sin señal justo en este momento: la app abre igual y se reintenta al entrar.
     return null;
   }
 };
+
+/**
+ * Usuarios autorizados a entrar al negocio.
+ *
+ * Hasta la migración 007 el sistema tenía UN dueño y la puerta se cerraba
+ * después del primero. Ahora el dueño mantiene una lista de mails invitados, y
+ * `reclamar_negocio()` deja pasar a quien esté en ella.
+ *
+ * POR QUÉ NO SE ABRE PARA CUALQUIERA: la app vive en una dirección pública. Si
+ * entrara cualquiera que se registre, la URL sería la llave del negocio — la
+ * deuda de todos los comercios a la vista, y con permiso de cargar ventas.
+ */
+export interface UsuarioAutorizado {
+  email: string;
+  rol: 'dueno' | 'vendedor';
+  /** Cuándo entró por primera vez. Vacío = invitado que todavía no se registró. */
+  usadoEn?: string;
+}
+
+export const traerAutorizados = async (): Promise<UsuarioAutorizado[]> => {
+  if (!hayBackend()) return [];
+  const filas = await traer<Record<string, unknown>>('usuarios_autorizados', 'email,rol,usado_en');
+  return filas
+    .map((f) => ({
+      email: String(f.email),
+      rol: (f.rol === 'dueno' ? 'dueno' : 'vendedor') as UsuarioAutorizado['rol'],
+      ...(f.usado_en ? { usadoEn: String(f.usado_en) } : {}),
+    }))
+    .sort((a, b) => a.email.localeCompare(b.email));
+};
+
+/** Invita a un mail. Es idempotente: repetirlo solo actualiza el rol. */
+export const autorizarUsuario = (email: string, rol: UsuarioAutorizado['rol'] = 'vendedor') =>
+  rpc('autorizar_usuario', { p_email: email.trim().toLowerCase(), p_rol: rol });
+
+/**
+ * Le saca el permiso a un mail.
+ *
+ * Saca a la persona de la lista y, si ya había entrado, también del negocio. Lo
+ * que NO hace es borrar nada de lo que cargó: sus ventas y sus cobros siguen
+ * siendo hechos que pasaron. Es la REGLA 0 de siempre.
+ */
+export const quitarAutorizacion = (email: string) =>
+  rpc('quitar_autorizacion', { p_email: email.trim().toLowerCase() });
 
 export const transporte: Transporte = {
   async enviar(op: Operacion) {

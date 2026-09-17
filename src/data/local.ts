@@ -11,6 +11,7 @@
 
 import { BaseLocal, hayIndexedDB, type DefinicionTabla } from './idb.ts';
 import { PARAMETROS_DEFAULT, type EstadoApp } from '../app/estado.ts';
+import { esIdReal } from '../app/limpieza.ts';
 import type { AlmacenCola, ItemCola } from './outbox.ts';
 
 const TABLAS: DefinicionTabla[] = [
@@ -114,17 +115,52 @@ const DATOS = [
  * subieron a Supabase, no hay forma de sacarlos desde el otro lado: hay que
  * borrarlos acá.
  *
- * NO toca la cola de salida. Si hay una venta esperando señal, sigue esperando.
+ * De la cola de salida saca SOLO las operaciones de los datos de ejemplo, y por
+ * el mismo criterio de id que el resto de la limpieza. Lo que tenga id de verdad
+ * se queda esperando su turno: si hay una venta sin subir, sigue esperando.
  */
 export const vaciarDatosLocales = async (): Promise<void> => {
   if (!hayIndexedDB()) return;
   await Promise.all(DATOS.map((t) => base.vaciar(t)));
+  await limpiarColaDeEjemplo();
   await Promise.all([
     base.borrar('config', 'negocioId'),
     base.borrar('config', 'listaId'),
     // De cuando los datos de ejemplo se marcaban en vez de reconocerse por el id.
     base.borrar('config', 'esSemilla'),
   ]);
+};
+
+/**
+ * Saca de la cola las operaciones de los datos de ejemplo.
+ *
+ * ESTO APARECIÓ EN PRODUCCIÓN, no en un test: después de la limpieza quedaron
+ * **16 operaciones `guardar_producto` con ids `p1`, `p10`, `p11`…**, en estado
+ * `error`, con nueve intentos cada una y siempre la misma respuesta de Postgres:
+ *
+ *     22P02  invalid input syntax for type uuid: "p1"
+ *
+ * Son la prueba de que los datos de ejemplo nunca pudieron llegar al servidor
+ * —la columna `id` es de tipo `uuid` y no acepta `p1`, por más veces que se
+ * reintente—, pero quedaban para siempre en el aparato haciendo que el cartel
+ * dijera "16 operaciones sin subir" en una app recién limpiada. Un cartel de
+ * alarma permanente por algo que no existe es peor que no tener cartel.
+ *
+ * Solo se descartan las de id que no es uuid: son exactamente las que el
+ * servidor rechaza de entrada y siempre va a rechazar. Una operación real nunca
+ * entra en ese filtro, así que esto no puede perder una venta.
+ *
+ * Se llama en CADA apertura, y no solo cuando hay datos de ejemplo que borrar.
+ * Tiene que ser así: en un aparato donde la limpieza de datos ya corrió, las
+ * filas de ejemplo ya no están pero estas operaciones sí, y nadie volvería a
+ * pasar a buscarlas. Devuelve cuántas sacó, para poder verlo en la bitácora.
+ */
+export const limpiarColaDeEjemplo = async (): Promise<number> => {
+  if (!hayIndexedDB()) return 0;
+  const items = await base.todos<ItemCola>('cola').catch(() => [] as ItemCola[]);
+  const deEjemplo = items.filter((i) => !esIdReal(i.id));
+  await Promise.all(deEjemplo.map((i) => base.borrar('cola', i.id)));
+  return deEjemplo.length;
 };
 
 /**

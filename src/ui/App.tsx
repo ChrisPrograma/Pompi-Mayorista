@@ -6,16 +6,19 @@ import {
   activarCliente, activarProducto, activarProveedor, altaCliente, altaProducto, altaProveedor,
   aplicar, aplicarSugerencias, cambiarPrecio, cargarAuto, clienteParecido, cobrar,
   descartarSugerencias, editarCliente, editarProducto, editarProveedor, entrarMercaderia,
-  estadoVacio, precioDe, productoParecido, vender,
+  estadoVacio, precioDe, productoConCodigo, productoParecido, vender,
   type Ctx, type EstadoApp, type Resultado,
 } from '../app/estado.ts';
 import { sinDatosDeEjemplo } from '../app/limpieza.ts';
 import {
-  cargarEstado, guardarEstado, almacenCola, idsEnCola, vaciarDatosLocales,
+  cargarEstado, guardarEstado, almacenCola, idsEnCola, vaciarDatosLocales, limpiarColaDeEjemplo,
 } from '../data/local.ts';
 import { descargarEstado, unir } from '../data/descarga.ts';
 import { Cola, type Operacion } from '../data/outbox.ts';
-import { hayBackend, reclamarNegocio, transporte } from '../data/servidor.ts';
+import {
+  autorizarUsuario, hayBackend, quitarAutorizacion, reclamarNegocio,
+  traerAutorizados, transporte, type UsuarioAutorizado,
+} from '../data/servidor.ts';
 import { salir, sesionGuardada, type Sesion } from '../data/sesion.ts';
 import { PantallaAcceso } from './ingreso.tsx';
 import { sugerenciasPendientes, vistaDeudas, type ProductoVista } from './vistas.ts';
@@ -106,6 +109,10 @@ export const App = () => {
   const [problemaDatos, setProblemaDatos] = useState<string | null>(null);
   /** Se incrementa para volver a intentar la descarga sin recargar la página. */
   const [intento, setIntento] = useState(0);
+  /** La hoja de "quién puede entrar", con la lista de mails autorizados. */
+  const [hojaUsuarios, setHojaUsuarios] = useState(false);
+  const [autorizados, setAutorizados] = useState<UsuarioAutorizado[] | null>(null);
+  const [errorUsuarios, setErrorUsuarios] = useState<string | null>(null);
   const campo = (k: string) => f[k] ?? '';
   const setCampo = (k: string, v: string) => setF((x) => ({ ...x, [k]: v }));
   const hoy = useMemo(() => new Date().toISOString(), [estado]);
@@ -131,6 +138,12 @@ export const App = () => {
   useEffect(() => {
     let vivo = true;
     (async () => {
+      // Operaciones de los datos de ejemplo que quedaron trabadas en la cola.
+      // Se sacan SIEMPRE, no solo cuando hay filas de ejemplo que borrar: en un
+      // aparato ya limpiado las filas no están pero las operaciones sí, y sin
+      // esto el cartel diría "16 operaciones sin subir" para siempre.
+      await limpiarColaDeEjemplo().catch(() => 0);
+
       let local = await cargarEstado().catch(() => null);
 
       /*
@@ -196,6 +209,45 @@ export const App = () => {
     })();
     return () => { vivo = false; };
   }, [sesion, intento]);
+
+  // ---- quién puede entrar --------------------------------------------------
+  //
+  // La lista se pide cada vez que se abre la hoja y no una sola vez al arrancar:
+  // cambia poco y no vale la pena tenerla al día todo el tiempo, pero cuando él
+  // la mira tiene que ver lo que hay de verdad, no una copia de hace dos horas.
+  const cargarAutorizados = useCallback(async () => {
+    setErrorUsuarios(null);
+    try {
+      setAutorizados(await traerAutorizados());
+    } catch {
+      setAutorizados([]);
+      setErrorUsuarios('No pudimos traer la lista. Fijate que tengas señal.');
+    }
+  }, []);
+
+  const agregarAutorizado = async (email: string) => {
+    setErrorUsuarios(null);
+    try {
+      await autorizarUsuario(email);
+      setCampo('mailNuevo', '');
+      await cargarAutorizados();
+    } catch (e) {
+      const m = e instanceof Error ? e.message : '';
+      setErrorUsuarios(m.includes('Solo el dueno')
+        ? 'Solo el dueño de la app puede autorizar usuarios.'
+        : 'No se pudo agregar. Fijate que el mail esté bien escrito y que tengas señal.');
+    }
+  };
+
+  const sacarAutorizado = async (email: string) => {
+    setErrorUsuarios(null);
+    try {
+      await quitarAutorizacion(email);
+      await cargarAutorizados();
+    } catch {
+      setErrorUsuarios('No se pudo quitar. Probá de nuevo con señal.');
+    }
+  };
 
   // ---- sincronización ------------------------------------------------------
   const sincronizar = useCallback(async () => {
@@ -475,12 +527,12 @@ export const App = () => {
    * borraría en el servidor — la clave simplemente no viajaría y el dato viejo
    * quedaría vivo allá mientras acá ya no está.
    */
-  const filaCliente = (c: { id: Uuid; nombre: string; zona?: string; contacto?: string;
-    diaVisita?: number; activo: boolean }): Operacion => ({
+  const filaCliente = (c: { id: Uuid; nombre: string; zona?: string; rubro?: string;
+    contacto?: string; diaVisita?: number; activo: boolean }): Operacion => ({
     tipo: 'guardar_cliente', id: c.id,
     payload: {
       negocio_id: estado.negocioId, nombre: c.nombre,
-      zona: c.zona ?? null, contacto: c.contacto ?? null,
+      zona: c.zona ?? null, rubro: c.rubro ?? null, contacto: c.contacto ?? null,
       dia_visita: c.diaVisita ?? null, activo: c.activo,
     },
   });
@@ -494,6 +546,7 @@ export const App = () => {
         id: hoja.id,
         nombre: campo('nombre'),
         zona: campo('zona'),
+        rubro: campo('rubro'),
         contacto: campo('contacto'),
         diaVisita: nuevoDia,
       });
@@ -505,6 +558,7 @@ export const App = () => {
     const r = altaCliente(estado, {
       nombre: campo('nombre'),
       zona: campo('zona') || undefined,
+      rubro: campo('rubro') || undefined,
       contacto: campo('contacto') || undefined,
       diaVisita: nuevoDia ?? undefined,
     }, ctx());
@@ -531,7 +585,7 @@ export const App = () => {
   const abrirEditarCliente = (id: Uuid) => {
     const c = estado.clientes.find((x) => x.id === id);
     if (!c) return;
-    setF({ nombre: c.nombre, zona: c.zona ?? '', contacto: c.contacto ?? '' });
+    setF({ nombre: c.nombre, zona: c.zona ?? '', rubro: c.rubro ?? '', contacto: c.contacto ?? '' });
     setNuevoDia(c.diaVisita ?? null);
     setFichaCliente(null);
     setHojaCliente({ modo: 'editar', id });
@@ -553,12 +607,15 @@ export const App = () => {
 
   // ---- productos -----------------------------------------------------------
 
-  const filaProducto = (p: { id: Uuid; nombre: string; variante?: string; categoria?: string;
-    proveedorId?: Uuid; unidad: string; sugeridoEnVehiculo?: number; activo: boolean }): Operacion => ({
+  const filaProducto = (p: { id: Uuid; codigo?: string; nombre: string; variante?: string;
+    descripcion?: string; categoria?: string; proveedorId?: Uuid; unidad: string;
+    sugeridoEnVehiculo?: number; activo: boolean }): Operacion => ({
     tipo: 'guardar_producto', id: p.id,
     payload: {
       negocio_id: estado.negocioId, nombre: p.nombre,
-      variante: p.variante ?? null, categoria: p.categoria ?? null,
+      codigo: p.codigo ?? null,
+      variante: p.variante ?? null, descripcion: p.descripcion ?? null,
+      categoria: p.categoria ?? null,
       proveedor_id: p.proveedorId ?? null, unidad: p.unidad,
       sugerido_en_vehiculo: p.sugeridoEnVehiculo ?? null, activo: p.activo,
     },
@@ -572,7 +629,9 @@ export const App = () => {
       const r = editarProducto(estado, {
         id: hoja.id,
         nombre: campo('nombre'),
+        codigo: campo('codigo'),
         variante: campo('variante'),
+        descripcion: campo('descripcion'),
         categoria: campo('categoria'),
         proveedorId: campo('proveedor') || null,
       });
@@ -588,7 +647,9 @@ export const App = () => {
     const r = altaProducto(estado, {
       nombre: campo('nombre'),
       precioCent,
+      codigo: campo('codigo') || undefined,
       variante: campo('variante') || undefined,
+      descripcion: campo('descripcion') || undefined,
       categoria: campo('categoria') || undefined,
       proveedorId: campo('proveedor') || undefined,
       ...(cantidad > 0 && costoCent > 0
@@ -637,7 +698,8 @@ export const App = () => {
     const p = estado.productos.find((x) => x.id === id);
     if (!p) return;
     setF({
-      nombre: p.nombre, variante: p.variante ?? '',
+      codigo: p.codigo ?? '', nombre: p.nombre, variante: p.variante ?? '',
+      descripcion: p.descripcion ?? '',
       categoria: p.categoria ?? '', proveedor: p.proveedorId ?? '',
     });
     setHojaProducto(null);
@@ -690,12 +752,13 @@ export const App = () => {
 
   // ---- proveedores ---------------------------------------------------------
 
-  const filaProveedor = (p: { id: Uuid; nombre: string; rubro?: string;
+  const filaProveedor = (p: { id: Uuid; nombre: string; zona?: string; rubro?: string;
     contacto?: string; activo: boolean }): Operacion => ({
     tipo: 'guardar_proveedor', id: p.id,
     payload: {
       negocio_id: estado.negocioId, nombre: p.nombre,
-      rubro: p.rubro ?? null, contacto: p.contacto ?? null, activo: p.activo,
+      zona: p.zona ?? null, rubro: p.rubro ?? null,
+      contacto: p.contacto ?? null, activo: p.activo,
     },
   });
 
@@ -705,10 +768,11 @@ export const App = () => {
     const r = hoja.modo === 'editar'
       ? editarProveedor(estado, {
           id: hoja.id, nombre: campo('nombre'),
-          rubro: campo('rubro'), contacto: campo('contacto'),
+          zona: campo('zona'), rubro: campo('rubro'), contacto: campo('contacto'),
         })
       : altaProveedor(estado, {
           nombre: campo('nombre'),
+          zona: campo('zona') || undefined,
           rubro: campo('rubro') || undefined,
           contacto: campo('contacto') || undefined,
         }, ctx());
@@ -728,7 +792,7 @@ export const App = () => {
   const abrirEditarProveedor = (id: Uuid) => {
     const p = estado.proveedores.find((x) => x.id === id);
     if (!p) return;
-    setF({ nombre: p.nombre, rubro: p.rubro ?? '', contacto: p.contacto ?? '' });
+    setF({ nombre: p.nombre, zona: p.zona ?? '', rubro: p.rubro ?? '', contacto: p.contacto ?? '' });
     setFichaProv(null);
     setHojaProv({ modo: 'editar', id });
   };
@@ -1054,10 +1118,17 @@ export const App = () => {
             )}
 
             <label className="campo">
-              <span>¿En qué zona está? <em>· opcional</em></span>
+              <span>Ubicación <em>· opcional</em></span>
               <input className="texto" id="cliente-zona" value={campo('zona')}
                 placeholder="Morón"
                 onChange={(ev: ChangeEvent<HTMLInputElement>) => setCampo('zona', ev.target.value)} />
+            </label>
+
+            <label className="campo">
+              <span>Rubro <em>· opcional</em></span>
+              <input className="texto" id="cliente-rubro" value={campo('rubro')}
+                placeholder="Veterinaria, pet shop, forrajería"
+                onChange={(ev: ChangeEvent<HTMLInputElement>) => setCampo('rubro', ev.target.value)} />
             </label>
 
             <label className="campo">
@@ -1136,6 +1207,11 @@ export const App = () => {
         const editando = hojaProdForm.modo === 'editar';
         const repetido = productoParecido(estado, campo('nombre'), campo('variante'));
         const duplicado = repetido && (!editando || repetido.id !== hojaProdForm.id);
+        // Se avisa mientras escribe, no al guardar: corregir un código con el
+        // formulario abierto es un segundo; descubrirlo después de guardar, no.
+        const codigoRepetido = productoConCodigo(
+          estado, campo('codigo'), editando ? hojaProdForm.id : undefined,
+        );
         const precioCent = aCentavos(campo('precio'));
         const costoCent = aCentavos(campo('costo'));
         const proveedores = estado.proveedores.filter((p) => p.activo);
@@ -1148,6 +1224,28 @@ export const App = () => {
                 : 'Lo mínimo es el nombre y a cuánto lo vendés.'}
             </p>
 
+            {/*
+              * El código va PRIMERO porque es como él identifica el producto en
+              * su planilla: cuando busca algo, busca el número, no el nombre.
+              */}
+            <label className="campo">
+              <span>Código <em>· opcional</em></span>
+              <input className="texto num" inputMode="numeric" value={campo('codigo')}
+                placeholder="101"
+                onChange={(ev: ChangeEvent<HTMLInputElement>) =>
+                  // Solo dígitos y hasta 10: es lo mismo que valida la base, así
+                  // que el error se evita al escribir en vez de avisarse al guardar.
+                  setCampo('codigo', ev.target.value.replace(/[^0-9]/g, '').slice(0, 10))} />
+            </label>
+
+            {codigoRepetido && (
+              <div style={{ marginBottom: 14 }}>
+                <Alerta tipo="bad" icono="i-alert"
+                  titulo={`El código ${campo('codigo')} ya lo usa "${codigoRepetido.nombre}"`}
+                  texto="Dos productos con el mismo código dejan de poder cruzarse con la planilla." />
+              </div>
+            )}
+
             <label className="campo">
               <span>¿Qué es?</span>
               <input className="texto" autoFocus value={campo('nombre')}
@@ -1159,6 +1257,13 @@ export const App = () => {
               <span>Talle, color o presentación <em>· opcional</em></span>
               <input className="texto" value={campo('variante')} placeholder="Talle 2 · surtido"
                 onChange={(ev: ChangeEvent<HTMLInputElement>) => setCampo('variante', ev.target.value)} />
+            </label>
+
+            <label className="campo">
+              <span>Descripción <em>· opcional</em></span>
+              <input className="texto" value={campo('descripcion')}
+                placeholder="Nylon reforzado con costura doble"
+                onChange={(ev: ChangeEvent<HTMLInputElement>) => setCampo('descripcion', ev.target.value)} />
             </label>
 
             {duplicado && (
@@ -1230,7 +1335,7 @@ export const App = () => {
             )}
 
             <button className="btn lg block"
-              disabled={!campo('nombre').trim() || (!editando && precioCent <= 0)}
+              disabled={!campo('nombre').trim() || (!editando && precioCent <= 0) || !!codigoRepetido}
               onClick={guardarProducto}>
               {editando ? 'Guardar los cambios' : 'Guardar producto'}
             </button>
@@ -1286,7 +1391,13 @@ export const App = () => {
           </label>
 
           <label className="campo">
-            <span>¿Qué te vende? <em>· opcional</em></span>
+            <span>Ubicación <em>· opcional</em></span>
+            <input className="texto" value={campo('zona')} placeholder="Once"
+              onChange={(ev: ChangeEvent<HTMLInputElement>) => setCampo('zona', ev.target.value)} />
+          </label>
+
+          <label className="campo">
+            <span>Rubro <em>· opcional</em></span>
             <input className="texto" value={campo('rubro')} placeholder="Collares, correas y arneses"
               onChange={(ev: ChangeEvent<HTMLInputElement>) => setCampo('rubro', ev.target.value)} />
           </label>
@@ -1333,6 +1444,10 @@ export const App = () => {
                 Traer los datos del servidor
               </button>
               <button className="btn outline block" style={{ marginTop: 9 }}
+                onClick={() => { setHojaCuenta(false); setHojaUsuarios(true); void cargarAutorizados(); }}>
+                Quién puede entrar
+              </button>
+              <button className="btn outline block" style={{ marginTop: 9 }}
                 onClick={() => { setHojaCuenta(false); acc.salir(); }}>
                 Salir de esta cuenta
               </button>
@@ -1361,6 +1476,72 @@ export const App = () => {
                 onClick={() => setHojaCuenta(false)}>Entendido</button>
             </>
           )}
+        </Hoja>
+      )}
+
+      {hojaUsuarios && (
+        <Hoja alCerrar={() => setHojaUsuarios(false)}>
+          <h3>Quién puede entrar</h3>
+          <p className="sub">
+            Escribí el mail de quien quieras que use la app. Cuando esa persona se
+            registre con ese mail, entra sola. Nadie más puede entrar.
+          </p>
+
+          <label className="campo">
+            <span>Mail de la persona</span>
+            <input className="texto" type="email" inputMode="email" autoComplete="off"
+              value={campo('mailNuevo')} placeholder="alguien@gmail.com"
+              onChange={(ev: ChangeEvent<HTMLInputElement>) => setCampo('mailNuevo', ev.target.value)} />
+          </label>
+
+          <button className="btn lg block"
+            disabled={!campo('mailNuevo').includes('@')}
+            onClick={() => void agregarAutorizado(campo('mailNuevo'))}>
+            Darle permiso
+          </button>
+
+          {errorUsuarios && (
+            <div style={{ marginTop: 14 }}>
+              <Alerta tipo="bad" icono="i-alert" titulo="No se pudo" texto={errorUsuarios} />
+            </div>
+          )}
+
+          <p className="eyebrow" style={{ marginTop: 18 }}>Con permiso hoy</p>
+          <div className="stack">
+            {autorizados === null && <p className="sub">Buscando…</p>}
+            {autorizados?.length === 0 && (
+              <Alerta tipo="ok" icono="i-user" titulo="Todavía no invitaste a nadie"
+                texto="Por ahora entrás solo vos. Agregá un mail arriba para sumar a alguien." />
+            )}
+            {autorizados?.map((u) => (
+              <div className="row" key={u.email}>
+                <span className="thumb"><Icono id="i-user" /></span>
+                <span className="row-main">
+                  <b>{u.email}</b>
+                  <span>{u.rol === 'dueno' ? 'Dueño' : 'Puede cargar y ver todo'}
+                    {u.usadoEn ? ' · ya entró' : ' · todavía no se registró'}</span>
+                </span>
+                {u.rol !== 'dueno' && (
+                  <button className="alert-act" onClick={() => void sacarAutorizado(u.email)}>
+                    Quitar
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/*
+            * Se dice explícitamente qué NO hace quitar el permiso. Si alguien
+            * cree que borra las ventas de esa persona, va a tener un susto —o,
+            * peor, va a contar con un borrado que nunca ocurrió.
+            */}
+          <p className="ingreso-pie" style={{ marginTop: 16, color: 'var(--ink-3)' }}>
+            Quitarle el permiso a alguien no borra nada de lo que cargó. Sus ventas y
+            sus cobros siguen siendo parte de tu historial.
+          </p>
+
+          <button className="btn outline block" style={{ marginTop: 14 }}
+            onClick={() => setHojaUsuarios(false)}>Listo</button>
         </Hoja>
       )}
 

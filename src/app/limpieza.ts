@@ -28,8 +28,17 @@
  */
 const ES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * ¿Este id lo generó la app, o viene de los datos de ejemplo?
+ *
+ * Exportado para que la limpieza de la cola de salida (`local.ts`) use
+ * exactamente el mismo criterio que la de los datos. Dos definiciones del
+ * "qué es un dato de verdad" es como se abre una grieta entre las dos.
+ */
+export const esIdReal = (id: string): boolean => ES_UUID.test(id);
+
 const soloReales = <T extends { id: string }>(filas: T[]): T[] =>
-  filas.filter((f) => ES_UUID.test(f.id));
+  filas.filter((f) => esIdReal(f.id));
 
 /** Forma mínima que necesita la limpieza. Evita depender de `EstadoApp` entero. */
 interface Limpiable {

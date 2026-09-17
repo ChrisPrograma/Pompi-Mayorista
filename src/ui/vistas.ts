@@ -136,6 +136,8 @@ export const vistaDeudas = (
 
 export interface ProductoVista {
   id: Uuid;
+  /** El código de su planilla. Sirve para ordenar y para buscar. */
+  codigo?: string;
   nombre: string;
   variante?: string;
   categoria?: string;
@@ -159,6 +161,7 @@ export const vistaProductos = (e: EstadoApp): ProductoVista[] => {
       const ganancia = precioCent !== null && costoCent !== null ? precioCent - costoCent : null;
       return {
         id: p.id,
+        codigo: p.codigo,
         nombre: p.nombre,
         variante: p.variante,
         categoria: p.categoria,
@@ -280,20 +283,38 @@ export const vistaNumeros = (e: EstadoApp, hoyIso: string, dias = 30): VistaNume
 // Proveedores
 // ---------------------------------------------------------------------------
 
+export interface ProveedorVista {
+  id: Uuid;
+  nombre: string;
+  zona?: string;
+  rubro?: string;
+  deboCent: Cent;
+  /** Fecha de la compra en cuenta más vieja, o `undefined` si no debe nada. */
+  deudaDesde?: string;
+  productos: number;
+}
+
 export const vistaProveedores = (
   e: EstadoApp,
-): { lista: { id: Uuid; nombre: string; rubro?: string; deboCent: Cent; productos: number }[]; totalCent: Cent } => {
+): { lista: ProveedorVista[]; totalCent: Cent } => {
   const lista = e.proveedores
     .filter((p) => p.activo)
-    .map((p) => ({
-      id: p.id,
-      nombre: p.nombre,
-      rubro: p.rubro,
-      deboCent: e.compras
+    .map((p) => {
+      const enCuenta = e.compras
         .filter((c) => c.proveedorId === p.id && c.condicionPago === 'cuenta')
-        .reduce((a, c) => a + c.totalCent, 0),
-      productos: e.productos.filter((x) => x.proveedorId === p.id && x.activo).length,
-    }));
+        .sort((a, b) => a.fecha.localeCompare(b.fecha));
+      return {
+        id: p.id,
+        nombre: p.nombre,
+        zona: p.zona,
+        rubro: p.rubro,
+        deboCent: enCuenta.reduce((a, c) => a + c.totalCent, 0),
+        // La compra en cuenta más vieja sin saldar. Es lo que hace que se pueda
+        // ordenar por antigüedad de deuda, igual que con los comercios.
+        deudaDesde: enCuenta[0]?.fecha,
+        productos: e.productos.filter((x) => x.proveedorId === p.id && x.activo).length,
+      };
+    });
   return { lista, totalCent: lista.reduce((a, p) => a + p.deboCent, 0) };
 };
 

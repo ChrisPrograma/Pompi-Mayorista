@@ -179,7 +179,7 @@ const numero = (clave: string, valor?: number | null): Record<string, number | u
  */
 export const altaCliente = (
   e: EstadoApp,
-  args: { nombre: string; zona?: string; contacto?: string; diaVisita?: number },
+  args: { nombre: string; zona?: string; rubro?: string; contacto?: string; diaVisita?: number },
   ctx: Ctx,
 ): Resultado => {
   const nombre = args.nombre.trim();
@@ -191,6 +191,7 @@ export const altaCliente = (
       negocioId: e.negocioId,
       nombre,
       ...opcional('zona', args.zona),
+      ...opcional('rubro', args.rubro),
       ...opcional('contacto', args.contacto),
       ...(args.diaVisita !== undefined ? { diaVisita: args.diaVisita } : {}),
       activo: true,
@@ -213,6 +214,7 @@ export const editarCliente = (
     id: Uuid;
     nombre?: string;
     zona?: string;
+    rubro?: string;
     contacto?: string;
     diaVisita?: number | null;
     plazoDias?: number | null;
@@ -229,6 +231,7 @@ export const editarCliente = (
     ...actual,
     ...(args.nombre !== undefined ? { nombre: args.nombre.trim() } : {}),
     ...texto('zona', args.zona),
+    ...texto('rubro', args.rubro),
     ...texto('contacto', args.contacto),
     ...numero('diaVisita', args.diaVisita),
     ...numero('plazoDias', args.plazoDias),
@@ -260,6 +263,26 @@ export const clienteParecido = (e: EstadoApp, nombre: string): Cliente | null =>
 // ---------------------------------------------------------------------------
 
 /**
+ * El código que él usa en su planilla.
+ *
+ * De 1 a 10 dígitos, y se guarda como TEXTO: si fuera un número, un código con
+ * cero adelante ("0110") se guardaría como 110 y dejaría de coincidir con la
+ * planilla — que es exactamente para lo que existe el código.
+ */
+const CODIGO = /^[0-9]{1,10}$/;
+
+export const codigoValido = (c: string): boolean => CODIGO.test(c.trim());
+
+/** ¿Ya hay otro producto con ese código? El código no se puede repetir. */
+export const productoConCodigo = (
+  e: EstadoApp, codigo: string, exceptoId?: Uuid,
+): Producto | null => {
+  const c = codigo.trim();
+  if (!c) return null;
+  return e.productos.find((p) => p.codigo === c && p.id !== exceptoId) ?? null;
+};
+
+/**
  * Alta de un producto.
  *
  * El producto y su precio son dos filas distintas desde el minuto cero: el
@@ -277,7 +300,9 @@ export const altaProducto = (
   args: {
     nombre: string;
     precioCent: Cent;
+    codigo?: string;
     variante?: string;
+    descripcion?: string;
     categoria?: string;
     proveedorId?: Uuid;
     unidad?: string;
@@ -290,6 +315,12 @@ export const altaProducto = (
   if (!nombre) throw new Error('El producto necesita un nombre');
   if (args.precioCent <= 0) throw new Error('El producto necesita un precio de venta');
 
+  const codigo = args.codigo?.trim();
+  if (codigo) {
+    if (!codigoValido(codigo)) throw new Error('El código son de 1 a 10 dígitos, sin letras');
+    if (productoConCodigo(e, codigo)) throw new Error(`Ya tenés un producto con el código ${codigo}`);
+  }
+
   const productoId = ctx.nuevoId();
   const fecha = ctx.ahora();
 
@@ -299,7 +330,9 @@ export const altaProducto = (
     nombre,
     unidad: args.unidad?.trim() || 'unidad',
     activo: true,
+    ...opcional('codigo', codigo),
     ...opcional('variante', args.variante),
+    ...opcional('descripcion', args.descripcion),
     ...opcional('categoria', args.categoria),
     ...(args.proveedorId ? { proveedorId: args.proveedorId } : {}),
     ...(args.sugeridoEnVehiculo !== undefined
@@ -370,7 +403,9 @@ export const editarProducto = (
   args: {
     id: Uuid;
     nombre?: string;
+    codigo?: string;
     variante?: string;
+    descripcion?: string;
     categoria?: string;
     proveedorId?: Uuid | null;
     unidad?: string;
@@ -379,6 +414,13 @@ export const editarProducto = (
 ): Resultado => {
   const actual = e.productos.find((p) => p.id === args.id);
   if (!actual) throw new Error('Ese producto no existe');
+
+  const codigo = args.codigo?.trim();
+  if (codigo) {
+    if (!codigoValido(codigo)) throw new Error('El código son de 1 a 10 dígitos, sin letras');
+    const otro = productoConCodigo(e, codigo, args.id);
+    if (otro) throw new Error(`Ese código ya lo usa "${otro.nombre}"`);
+  }
 
   if (args.nombre !== undefined && !args.nombre.trim()) {
     throw new Error('El producto necesita un nombre');
@@ -391,7 +433,9 @@ export const editarProducto = (
     ...actual,
     ...(args.nombre !== undefined ? { nombre: args.nombre.trim() } : {}),
     ...(args.unidad !== undefined ? { unidad: args.unidad.trim() } : {}),
+    ...texto('codigo', args.codigo),
     ...texto('variante', args.variante),
+    ...texto('descripcion', args.descripcion),
     ...texto('categoria', args.categoria),
     ...(args.proveedorId !== undefined ? { proveedorId: args.proveedorId ?? undefined } : {}),
     ...numero('sugeridoEnVehiculo', args.sugeridoEnVehiculo),
@@ -480,7 +524,7 @@ export const cambiarPrecio = (
 
 export const altaProveedor = (
   e: EstadoApp,
-  args: { nombre: string; rubro?: string; contacto?: string },
+  args: { nombre: string; zona?: string; rubro?: string; contacto?: string },
   ctx: Ctx,
 ): Resultado => {
   const nombre = args.nombre.trim();
@@ -489,6 +533,7 @@ export const altaProveedor = (
     id: ctx.nuevoId(),
     negocioId: e.negocioId,
     nombre,
+    ...opcional('zona', args.zona),
     ...opcional('rubro', args.rubro),
     ...opcional('contacto', args.contacto),
     activo: true,
@@ -497,7 +542,7 @@ export const altaProveedor = (
 
 export const editarProveedor = (
   e: EstadoApp,
-  args: { id: Uuid; nombre?: string; rubro?: string; contacto?: string },
+  args: { id: Uuid; nombre?: string; zona?: string; rubro?: string; contacto?: string },
 ): Resultado => {
   const actual = e.proveedores.find((p) => p.id === args.id);
   if (!actual) throw new Error('Ese proveedor no existe');
@@ -507,6 +552,7 @@ export const editarProveedor = (
   return { proveedores: [limpiar({
     ...actual,
     ...(args.nombre !== undefined ? { nombre: args.nombre.trim() } : {}),
+    ...texto('zona', args.zona),
     ...texto('rubro', args.rubro),
     ...texto('contacto', args.contacto),
   })] };
