@@ -225,11 +225,11 @@ export const App = () => {
     }
   }, []);
 
-  const agregarAutorizado = async (email: string) => {
+  const agregarAutorizado = async (email: string, rol: 'dueno' | 'vendedor') => {
     setErrorUsuarios(null);
     try {
-      await autorizarUsuario(email);
-      setCampo('mailNuevo', '');
+      await autorizarUsuario(email, rol);
+      setCampo('mailNuevo', ''); setCampo('rolNuevo', '');
       await cargarAutorizados();
     } catch (e) {
       const m = e instanceof Error ? e.message : '';
@@ -1444,7 +1444,10 @@ export const App = () => {
                 Traer los datos del servidor
               </button>
               <button className="btn outline block" style={{ marginTop: 9 }}
-                onClick={() => { setHojaCuenta(false); setHojaUsuarios(true); void cargarAutorizados(); }}>
+                onClick={() => {
+                  setHojaCuenta(false); setHojaUsuarios(true);
+                  setF({}); void cargarAutorizados();
+                }}>
                 Quién puede entrar
               </button>
               <button className="btn outline block" style={{ marginTop: 9 }}
@@ -1494,9 +1497,33 @@ export const App = () => {
               onChange={(ev: ChangeEvent<HTMLInputElement>) => setCampo('mailNuevo', ev.target.value)} />
           </label>
 
+          {/*
+            * El rol no es un detalle administrativo: es quién puede seguir
+            * invitando gente. Si todos entraran como "vendedor", el único que
+            * podría sumar a alguien sería quien creó la cuenta al principio, y el
+            * dueño del negocio quedaría dependiendo de él para cada empleado.
+            */}
+          <div className="campo">
+            <span>¿Qué va a poder hacer?</span>
+            <div className="chips">
+              <button type="button" className={`chip ${campo('rolNuevo') !== 'dueno' ? 'on' : ''}`}
+                aria-pressed={campo('rolNuevo') !== 'dueno'}
+                onClick={() => setCampo('rolNuevo', 'vendedor')}>
+                Cargar y ver todo
+              </button>
+              <button type="button" className={`chip ${campo('rolNuevo') === 'dueno' ? 'on' : ''}`}
+                aria-pressed={campo('rolNuevo') === 'dueno'}
+                onClick={() => setCampo('rolNuevo', 'dueno')}>
+                Dueño · también invita
+              </button>
+            </div>
+          </div>
+
           <button className="btn lg block"
             disabled={!campo('mailNuevo').includes('@')}
-            onClick={() => void agregarAutorizado(campo('mailNuevo'))}>
+            onClick={() => void agregarAutorizado(
+              campo('mailNuevo'), campo('rolNuevo') === 'dueno' ? 'dueno' : 'vendedor',
+            )}>
             Darle permiso
           </button>
 
