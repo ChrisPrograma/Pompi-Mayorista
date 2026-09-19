@@ -318,6 +318,18 @@ export const vistaProveedores = (
   return { lista, totalCent: lista.reduce((a, p) => a + p.deboCent, 0) };
 };
 
+/**
+ * Cuántos hay, contando solo los que siguen en uso.
+ *
+ * "Dejar de vender este producto" no borra la fila: le pone `activo = false`
+ * (REGLA 0, nada se pisa). Las listas ya filtran por `activo`, pero los números
+ * de las tarjetas de "Mis cosas" contaban la tabla entera, así que después de
+ * archivar algo la tarjeta decía "3 productos" y la lista mostraba 2. El número
+ * que se le muestra tiene que ser el mismo que puede tocar.
+ */
+export const cuantosActivos = (l: readonly { activo: boolean }[]): number =>
+  l.reduce((a, x) => a + (x.activo ? 1 : 0), 0);
+
 /** Las sugerencias de precio que esperan una decisión. */
 export const sugerenciasPendientes = (e: EstadoApp) =>
   e.sugerencias

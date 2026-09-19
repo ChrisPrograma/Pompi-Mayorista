@@ -5,6 +5,7 @@ import type { EstadoApp } from '../app/estado.ts';
 import {
   sugerenciasPendientes,
   vistaAuto,
+  cuantosActivos,
   vistaDeudas,
   vistaHoy,
   vistaNumeros,
@@ -155,7 +156,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
    * El orden de los tres pasos no es decorativo: un producto puede llevar su
    * carga inicial de stock, y para eso necesita un proveedor ya cargado.
    */
-  if (estado.productos.length === 0 && estado.clientes.length === 0) {
+  if (cuantosActivos(estado.productos) === 0 && cuantosActivos(estado.clientes) === 0) {
     const pasos = [
       ['proveedores', 'i-truck', 'Cargá tus proveedores', 'A quién le comprás'],
       ['productos', 'i-box', 'Cargá tus productos', 'Qué vendés y a cuánto'],
@@ -228,7 +229,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
       )}
 
       {/* Sin productos, "el auto está cargado" sería falso: no hay nada que cargar. */}
-      {estado.productos.length === 0 ? (
+      {cuantosActivos(estado.productos) === 0 ? (
         <Alerta tipo="warn" icono="i-box" titulo="Todavía no cargaste productos"
           texto="Sin productos no podés vender ni cargar el auto. Es lo primero."
           accion={{ texto: 'Cargar', alTocar: () => acc.ir('productos') }} />
@@ -398,7 +399,7 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
             * "no hay nada" para los dos lo dejaría sin saber qué hacer.
             */}
           {productos.length === 0 && (
-            estado.productos.length === 0 ? (
+            cuantosActivos(estado.productos) === 0 ? (
               <Alerta tipo="warn" icono="i-box" titulo="Todavía no cargaste productos"
                 texto="Sin productos no hay nada para vender. Se cargan una sola vez y quedan."
                 accion={{ texto: 'Cargar', alTocar: () => acc.ir('productos') }} />
@@ -560,6 +561,10 @@ export const PantallaCosas = ({ estado, acc }: Props) => {
   const auto = vistaAuto(estado);
   const pend = sugerenciasPendientes(estado);
   const enAuto = vistaProductos(estado).reduce((a, p) => a + p.enVehiculo, 0);
+  // Los mismos que muestran las listas: archivar tiene que bajar el número.
+  const nProductos = cuantosActivos(estado.productos);
+  const nClientes = cuantosActivos(estado.clientes);
+  const nProveedores = prov.lista.length;
 
   return (
     <div className="view">
@@ -582,16 +587,26 @@ export const PantallaCosas = ({ estado, acc }: Props) => {
         </button>
         <button onClick={() => acc.ir('productos')}>
           <span className="thumb"><Icono id="i-box" /></span>
-          <b>Mis productos</b><span>{estado.productos.length} productos</span>
+          <b>Mis productos</b>
+          <span>{nProductos === 1 ? '1 producto' : `${nProductos} productos`}</span>
         </button>
         <button onClick={() => acc.ir('proveedores')}>
           <span className="thumb c-higiene"><Icono id="i-store" /></span>
           <b>Mis proveedores</b>
-          <span>{prov.totalCent > 0 ? `les debés ${plataCorta(prov.totalCent)}` : 'estás al día'}</span>
+          {/*
+            * Esta tarjeta mostraba solo la deuda, así que era la única del hub
+            * sin decir cuántos hay. Va el número primero, como en las otras dos,
+            * y la deuda atrás, que es lo que él mira todos los días.
+            */}
+          <span>
+            {nProveedores === 1 ? '1 proveedor' : `${nProveedores} proveedores`}
+            {prov.totalCent > 0 ? ` · les debés ${plataCorta(prov.totalCent)}` : ' · estás al día'}
+          </span>
         </button>
         <button onClick={() => acc.ir('clientes')}>
           <span className="thumb c-descanso"><Icono id="i-user" /></span>
-          <b>Mis clientes</b><span>{estado.clientes.length} comercios</span>
+          <b>Mis clientes</b>
+          <span>{nClientes === 1 ? '1 comercio' : `${nClientes} comercios`}</span>
         </button>
         <button onClick={() => acc.ir('numeros')}>
           <span className="thumb c-juguete"><Icono id="i-chart" /></span>
@@ -811,10 +826,10 @@ export const PantallaIngreso = ({ estado, acc }: Props) => {
             */}
           {delProveedor.length === 0 && (
             <Alerta tipo="warn" icono="i-box"
-              titulo={estado.productos.length === 0
+              titulo={cuantosActivos(estado.productos) === 0
                 ? 'Todavía no cargaste productos'
                 : 'Ningún producto figura como de este proveedor'}
-              texto={estado.productos.length === 0
+              texto={cuantosActivos(estado.productos) === 0
                 ? 'Cargá primero lo que vendés y después volvé a anotar la entrada.'
                 : 'En la ficha de cada producto se elige de qué proveedor es. Los que no lo tengan puesto no aparecen en esta lista.'}
               accion={{ texto: 'Ver productos', alTocar: () => acc.ir('productos') }} />

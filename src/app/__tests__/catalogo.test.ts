@@ -33,7 +33,7 @@ import {
   type Ctx,
 } from '../estado.ts';
 import { construirSemilla, idsSecuenciales } from '../semilla.ts';
-import { vistaProductos, vistaProveedores } from '../../ui/vistas.ts';
+import { cuantosActivos, vistaProductos, vistaProveedores } from '../../ui/vistas.ts';
 
 const HOY = '2026-09-15T14:00:00.000Z';
 const ctx = (): Ctx => ({ nuevoId: idsSecuenciales('n'), ahora: () => HOY });
@@ -159,6 +159,43 @@ describe('desactivar en vez de borrar', () => {
     const e1 = aplicar(e0, activarProveedor(e0, 'v1', false));
     expect(vistaProveedores(e1).lista.some((p) => p.id === 'v1')).toBe(false);
     expect(e1.compras.length).toBe(e0.compras.length);
+  });
+
+  it('archivar baja el número que muestran las tarjetas de "Mis cosas"', () => {
+    /*
+     * El número de la tarjeta salía de `estado.productos.length`, que cuenta
+     * también los archivados. Archivar un producto dejaba la tarjeta diciendo
+     * "3 productos" y la lista mostrando 2, y esa diferencia entre el resumen y
+     * la lista es exactamente el tipo de cosa que lo hace desconfiar de la app.
+     *
+     * Se compara contra la lista, no contra un número escrito a mano: lo que
+     * importa no es cuántos hay, es que la tarjeta y la lista digan lo mismo.
+     */
+    const e0 = construirSemilla(HOY);
+    const antes = cuantosActivos(e0.productos);
+    expect(antes).toBe(vistaProductos(e0).length);
+
+    const e1 = aplicar(e0, activarProducto(e0, 'p1', false));
+    expect(cuantosActivos(e1.productos)).toBe(antes - 1);
+    expect(cuantosActivos(e1.productos)).toBe(vistaProductos(e1).length);
+    // La fila sigue estando: se archivó, no se borró.
+    expect(e1.productos.length).toBe(e0.productos.length);
+  });
+
+  it('archivar un comercio baja el número de "Mis clientes"', () => {
+    const e0 = construirSemilla(HOY);
+    const antes = cuantosActivos(e0.clientes);
+    const e1 = aplicar(e0, activarCliente(e0, 'c1', false));
+    expect(cuantosActivos(e1.clientes)).toBe(antes - 1);
+    expect(e1.clientes.length).toBe(e0.clientes.length);
+  });
+
+  it('archivar un proveedor baja el número de "Mis proveedores"', () => {
+    const e0 = construirSemilla(HOY);
+    const antes = vistaProveedores(e0).lista.length;
+    const e1 = aplicar(e0, activarProveedor(e0, 'v1', false));
+    expect(vistaProveedores(e1).lista.length).toBe(antes - 1);
+    expect(cuantosActivos(e1.proveedores)).toBe(antes - 1);
   });
 });
 
