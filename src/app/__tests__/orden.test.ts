@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  buscarClientes, buscarProductos, buscarProveedores,
   ordenarClientes, ordenarProductos, ordenarProveedores,
 } from '../../ui/orden.ts';
 import type { ProductoVista, ProveedorVista, DeudaVista } from '../../ui/vistas.ts';
@@ -121,7 +122,7 @@ describe('ordenar comercios', () => {
       cli({ id: 'a', nombre: 'Debe hace 3' }),
       cli({ id: 'b', nombre: 'Debe hace 40' }),
     ];
-    expect(nombres(ordenarClientes(l, 'deuda', deudas)))
+    expect(nombres(ordenarClientes(l, 'deuda', 'desc', deudas)))
       .toEqual(['Debe hace 40', 'Debe hace 3', 'No debe']);
   });
 
@@ -153,5 +154,87 @@ describe('ordenar proveedores', () => {
       prov({ id: 'b', nombre: 'Avellaneda', zona: 'Avellaneda' }),
     ];
     expect(nombres(ordenarProveedores(l, 'ubicacion'))).toEqual(['Avellaneda', 'Once']);
+  });
+});
+
+describe('invertir el orden', () => {
+  it('Z–A da vuelta los nombres pero NO sube los vacíos', () => {
+    /*
+     * El caso que hay que cuidar al agregar la dirección.
+     *
+     * Invertir el resultado del comparador entero daría vuelta los nombres y
+     * también dónde caen los que no tienen el dato: los productos sin código se
+     * irían arriba de todo justo cuando alguien ordena por código. La dirección
+     * tiene que invertir solo la comparación entre dos valores presentes.
+     */
+    const l = [
+      prod({ id: 'a', nombre: 'Alfa', codigo: '1' }),
+      prod({ id: 'b', nombre: 'Beta', codigo: '2' }),
+      prod({ id: 'c', nombre: 'Sin código' }),
+    ];
+    expect(nombres(ordenarProductos(l, 'codigo', 'desc')))
+      .toEqual(['Beta', 'Alfa', 'Sin código']);
+  });
+
+  it('precio ascendente: del más barato al más caro, y los sin precio al final', () => {
+    const l = [
+      prod({ id: 'a', nombre: 'Caro', precioCent: 900_000 }),
+      prod({ id: 'b', nombre: 'Sin precio', precioCent: null }),
+      prod({ id: 'c', nombre: 'Barato', precioCent: 100_000 }),
+    ];
+    expect(nombres(ordenarProductos(l, 'precio', 'asc')))
+      .toEqual(['Barato', 'Caro', 'Sin precio']);
+  });
+});
+
+describe('buscar', () => {
+  const catalogo = [
+    prod({ id: 'a', nombre: 'Collar reflectivo doble', codigo: '110', categoria: 'collares' }),
+    prod({ id: 'b', nombre: 'Pelota de goma', codigo: '205', categoria: 'juguetes' }),
+    prod({ id: 'c', nombre: 'Piedra sanitaria', codigo: '310', categoria: 'higiene' }),
+  ];
+
+  it('encuentra por código', () => {
+    expect(nombres(buscarProductos(catalogo, '205'))).toEqual(['Pelota de goma']);
+  });
+
+  it('encuentra por un pedazo del nombre', () => {
+    // Nadie escribe la palabra entera buscando en un celular.
+    expect(nombres(buscarProductos(catalogo, 'refle'))).toEqual(['Collar reflectivo doble']);
+  });
+
+  it('encuentra por rubro', () => {
+    expect(nombres(buscarProductos(catalogo, 'higiene'))).toEqual(['Piedra sanitaria']);
+  });
+
+  it('ignora acentos y mayúsculas', () => {
+    const l = [cli({ id: 'a', nombre: 'Pet Shop', zona: 'Morón' })];
+    expect(buscarClientes(l, 'MORON')).toHaveLength(1);
+    expect(buscarClientes(l, 'morón')).toHaveLength(1);
+  });
+
+  it('con varias palabras, las busca todas aunque estén al revés', () => {
+    expect(nombres(buscarProductos(catalogo, 'goma pelota'))).toEqual(['Pelota de goma']);
+  });
+
+  it('sin búsqueda devuelve la lista entera, y la MISMA referencia', () => {
+    // Que sea la misma referencia evita que React vuelva a dibujar la lista
+    // entera cada vez que se teclea y se borra.
+    expect(buscarProductos(catalogo, '')).toBe(catalogo);
+    expect(buscarProductos(catalogo, '   ')).toBe(catalogo);
+  });
+
+  it('lo que no está, no aparece', () => {
+    expect(buscarProductos(catalogo, 'bicicleta')).toEqual([]);
+  });
+
+  it('proveedores: por nombre, ubicación o rubro', () => {
+    const l = [
+      prov({ id: 'a', nombre: 'Distribuidora Once', zona: 'Once', rubro: 'Collares' }),
+      prov({ id: 'b', nombre: 'Juguetería Sur', zona: 'Avellaneda', rubro: 'Juguetes' }),
+    ];
+    expect(nombres(buscarProveedores(l, 'once'))).toEqual(['Distribuidora Once']);
+    expect(nombres(buscarProveedores(l, 'avellaneda'))).toEqual(['Juguetería Sur']);
+    expect(nombres(buscarProveedores(l, 'juguetes'))).toEqual(['Juguetería Sur']);
   });
 });

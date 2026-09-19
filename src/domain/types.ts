@@ -118,7 +118,16 @@ export interface CompraItem {
 export interface Compra {
   id: Uuid;
   negocioId: Uuid;
-  proveedorId: Uuid;
+  /**
+   * Opcional SOLO en compras al contado.
+   *
+   * El caso real es la carga inicial: "estas diez unidades ya las tengo en casa".
+   * Eso no se le compró a nadie hoy, así que no hay proveedor. Una compra en
+   * cuenta, en cambio, siempre tiene uno — si no, sería una deuda con nadie, un
+   * número que aparece en "vos les debés" y no se puede pagar nunca. La base lo
+   * hace cumplir con un CHECK (`008_compra_sin_proveedor.sql`).
+   */
+  proveedorId?: Uuid;
   fecha: string;
   condicionPago: 'contado' | 'cuenta';
   totalCent: Cent;

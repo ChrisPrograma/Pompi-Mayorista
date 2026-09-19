@@ -206,14 +206,38 @@ describe('altaProducto', () => {
     expect(e1.compras.at(-1)!.condicionPago).toBe('contado');
   });
 
-  it('pide precio y nombre, y proveedor si hay carga inicial', () => {
+  it('lo único obligatorio es el nombre y el precio', () => {
     const e0 = construirSemilla(HOY);
     expect(() => altaProducto(e0, { nombre: '', precioCent: pesos(100) }, ctx())).toThrow();
     expect(() => altaProducto(e0, { nombre: 'X', precioCent: 0 }, ctx())).toThrow();
-    expect(() => altaProducto(e0, {
-      nombre: 'X', precioCent: pesos(100),
+  });
+
+  it('acepta carga inicial SIN proveedor', () => {
+    /*
+     * Este test reemplaza a uno que exigía lo contrario, y el que estaba
+     * encima era el bug.
+     *
+     * La pantalla decía "opcional" al lado del proveedor, dejaba escribir las
+     * unidades y el costo, y al guardar tiraba "hace falta decir de qué
+     * proveedor es". Como nadie agarraba esa excepción, la hoja quedaba abierta
+     * sin cartel: parecía que el botón no hacía nada.
+     *
+     * Lo correcto es que sea opcional: "estas diez unidades ya las tengo en
+     * casa" no se le compró a nadie hoy. Queda como compra al CONTADO y sin
+     * proveedor — al contado porque no es una deuda nueva, y sin proveedor
+     * porque no hay a quién debérsela.
+     */
+    const e0 = construirSemilla(HOY);
+    const r = altaProducto(e0, {
+      nombre: 'Producto sin proveedor',
+      precioCent: pesos(100),
       cargaInicial: { cantidad: 5, costoUnitarioCent: pesos(50) },
-    }, ctx())).toThrow();
+    }, ctx());
+
+    const compra = r.compras![0];
+    expect(compra.proveedorId).toBeUndefined();
+    expect(compra.condicionPago).toBe('contado');
+    expect(r.movimientos![0].cantidad).toBe(5);
   });
 
   it('avisa cuando el nombre y la presentación ya existen', () => {

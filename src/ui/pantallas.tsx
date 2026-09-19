@@ -14,9 +14,11 @@ import {
   type ProductoVista,
 } from './vistas.ts';
 import {
+  DIRECCION_INICIAL, DIRECCION_INICIAL_CLIENTE, DIRECCION_INICIAL_PROVEEDOR,
   ORDENES_CLIENTE, ORDENES_PRODUCTO, ORDENES_PROVEEDOR,
+  buscarClientes, buscarProductos, buscarProveedores,
   ordenarClientes, ordenarProductos, ordenarProveedores,
-  type OrdenCliente, type OrdenProducto, type OrdenProveedor,
+  type Direccion, type OrdenCliente, type OrdenProducto, type OrdenProveedor,
 } from './orden.ts';
 import { Alerta, Cantidad, Icono, claseCategoria, plata, plataCorta } from './componentes.tsx';
 
@@ -63,30 +65,73 @@ const Volver = ({ acc }: { acc: Acciones }) => (
 // Hoy
 // ---------------------------------------------------------------------------
 /**
- * El selector de "ordenar por".
+ * Buscador + "ordenar por", la barra que llevan las tres listas del catálogo.
  *
- * Chips y no un `<select>` a propósito: en un celular, un desplegable nativo
- * tapa media pantalla y hay que tocar dos veces. Acá las opciones están a la
- * vista y se cambia de orden con un toque, que es lo que va a hacer parado en la
- * vereda buscando un producto.
+ * Chips y no un `<select>` a propósito: en un celular un desplegable nativo tapa
+ * media pantalla y pide dos toques. Acá las opciones se ven todas y cambiar el
+ * orden es un solo toque, que es lo que va a hacer parado en la vereda.
+ *
+ * La dirección es un botón aparte y no dos chips por criterio. Con cuatro
+ * criterios serían ocho chips, dos filas, y la mitad diciendo lo mismo al revés.
+ * Así son cuatro chips y una flecha que se entiende sola.
  */
-function Orden<T extends string>({ opciones, valor, alCambiar }: {
+function Barra<T extends string>({
+  opciones, valor, alCambiar, direccion, alInvertir,
+  busqueda, alBuscar, ejemplo, cuantos, total,
+}: {
   opciones: readonly { id: T; texto: string }[];
   valor: T;
   alCambiar: (v: T) => void;
+  direccion: Direccion;
+  alInvertir: () => void;
+  busqueda: string;
+  alBuscar: (q: string) => void;
+  ejemplo: string;
+  cuantos: number;
+  total: number;
 }) {
+  const alfabetico = valor !== 'precio' && valor !== 'deuda';
   return (
-    <div className="orden" role="group" aria-label="Ordenar por">
-      <span className="orden-et">Ordenar por</span>
-      <div className="chips">
-        {opciones.map((o) => (
-          <button key={o.id} type="button"
-            className={`chip ${o.id === valor ? 'on' : ''}`}
-            aria-pressed={o.id === valor}
-            onClick={() => alCambiar(o.id)}>
-            {o.texto}
+    <div className="barra">
+      <div className="buscador">
+        <Icono id="i-search" clase="ico-s" />
+        <input className="texto" type="search" inputMode="search"
+          value={busqueda} placeholder={ejemplo} aria-label="Buscar"
+          onChange={(ev: ChangeEvent<HTMLInputElement>) => alBuscar(ev.target.value)} />
+        {busqueda && (
+          <button className="buscador-x" onClick={() => alBuscar('')} aria-label="Borrar la búsqueda">
+            <Icono id="i-close" clase="ico-s" />
           </button>
-        ))}
+        )}
+      </div>
+
+      {/* Solo cuando la búsqueda achica la lista: si no, es ruido permanente. */}
+      {busqueda.trim() && (
+        <p className="orden-et" role="status">
+          {cuantos === 0 ? 'No encontré nada con eso' : `${cuantos} de ${total}`}
+        </p>
+      )}
+
+      <div className="orden" role="group" aria-label="Ordenar por">
+        <span className="orden-et">Ordenar por</span>
+        <div className="chips">
+          {opciones.map((o) => (
+            <button key={o.id} type="button"
+              className={`chip ${o.id === valor ? 'on' : ''}`}
+              aria-pressed={o.id === valor}
+              onClick={() => alCambiar(o.id)}>
+              {o.texto}
+            </button>
+          ))}
+          <button type="button" className="chip dir" onClick={alInvertir}
+            aria-label={direccion === 'asc' ? 'Cambiar a orden descendente' : 'Cambiar a orden ascendente'}
+            title={direccion === 'asc' ? 'De menor a mayor' : 'De mayor a menor'}>
+            {direccion === 'asc' ? '↑' : '↓'}
+            <span className="dir-et">
+              {alfabetico ? (direccion === 'asc' ? 'A–Z' : 'Z–A') : (direccion === 'asc' ? 'menor' : 'mayor')}
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -577,10 +622,18 @@ export const PantallaCosas = ({ estado, acc }: Props) => {
 // ---------------------------------------------------------------------------
 export const PantallaProductos = ({ estado, acc }: Props) => {
   const [orden, setOrden] = useState<OrdenProducto>('nombre');
+  const [dir, setDir] = useState<Direccion>(DIRECCION_INICIAL.nombre);
+  const [q, setQ] = useState('');
+  const todos = useMemo(() => vistaProductos(estado), [estado]);
   const productos = useMemo(
-    () => ordenarProductos(vistaProductos(estado), orden),
-    [estado, orden],
+    () => ordenarProductos(buscarProductos(todos, q), orden, dir),
+    [todos, q, orden, dir],
   );
+  // Al cambiar de criterio se vuelve a su dirección natural: el precio arranca de
+  // mayor a menor, el nombre de la A a la Z. Si se conservara la dirección
+  // anterior, pasar de "nombre Z–A" a "precio" daría el precio al revés de lo
+  // esperado sin que nadie lo haya pedido.
+  const cambiarOrden = (o: OrdenProducto) => { setOrden(o); setDir(DIRECCION_INICIAL[o]); };
   return (
     <div className="view">
       <Volver acc={acc} />
@@ -592,8 +645,11 @@ export const PantallaProductos = ({ estado, acc }: Props) => {
         <Icono id="i-arrow" clase="ico-arrow ico-s" />
       </button>
 
-      {productos.length > 1 && (
-        <Orden opciones={ORDENES_PRODUCTO} valor={orden} alCambiar={setOrden} />
+      {(todos.length > 1 || q) && (
+        <Barra opciones={ORDENES_PRODUCTO} valor={orden} alCambiar={cambiarOrden}
+          direccion={dir} alInvertir={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+          busqueda={q} alBuscar={setQ} ejemplo="Buscar por código, nombre o rubro"
+          cuantos={productos.length} total={todos.length} />
       )}
 
       <div className="stack" data-tour="lista-productos-todos">
@@ -863,8 +919,14 @@ export const PantallaIngreso = ({ estado, acc }: Props) => {
 // ---------------------------------------------------------------------------
 export const PantallaProveedores = ({ estado, acc }: Props) => {
   const [orden, setOrden] = useState<OrdenProveedor>('nombre');
+  const [dir, setDir] = useState<Direccion>(DIRECCION_INICIAL_PROVEEDOR.nombre);
+  const [q, setQ] = useState('');
   const v = vistaProveedores(estado);
-  const lista = useMemo(() => ordenarProveedores(v.lista, orden), [estado, orden]);
+  const lista = useMemo(
+    () => ordenarProveedores(buscarProveedores(v.lista, q), orden, dir),
+    [estado, q, orden, dir],
+  );
+  const cambiarOrden = (o: OrdenProveedor) => { setOrden(o); setDir(DIRECCION_INICIAL_PROVEEDOR[o]); };
   return (
     <div className="view">
       <Volver acc={acc} />
@@ -879,8 +941,11 @@ export const PantallaProveedores = ({ estado, acc }: Props) => {
         <Icono id="i-arrow" clase="ico-arrow ico-s" />
       </button>
 
-      {lista.length > 1 && (
-        <Orden opciones={ORDENES_PROVEEDOR} valor={orden} alCambiar={setOrden} />
+      {(v.lista.length > 1 || q) && (
+        <Barra opciones={ORDENES_PROVEEDOR} valor={orden} alCambiar={cambiarOrden}
+          direccion={dir} alInvertir={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+          busqueda={q} alBuscar={setQ} ejemplo="Buscar por nombre, ubicación o rubro"
+          cuantos={lista.length} total={v.lista.length} />
       )}
 
       <div className="stack">
@@ -908,9 +973,15 @@ export const PantallaProveedores = ({ estado, acc }: Props) => {
 
 export const PantallaClientes = ({ estado, hoy, acc }: Props) => {
   const [orden, setOrden] = useState<OrdenCliente>('nombre');
+  const [dir, setDir] = useState<Direccion>(DIRECCION_INICIAL_CLIENTE.nombre);
+  const [q, setQ] = useState('');
   const deudas = vistaDeudas(estado, hoy);
   const activos = estado.clientes.filter((c) => c.activo);
-  const lista = useMemo(() => ordenarClientes(activos, orden, deudas.lista), [estado, hoy, orden]);
+  const lista = useMemo(
+    () => ordenarClientes(buscarClientes(activos, q), orden, dir, deudas.lista),
+    [estado, hoy, q, orden, dir],
+  );
+  const cambiarOrden = (o: OrdenCliente) => { setOrden(o); setDir(DIRECCION_INICIAL_CLIENTE[o]); };
   const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
   return (
     <div className="view">
@@ -923,8 +994,11 @@ export const PantallaClientes = ({ estado, hoy, acc }: Props) => {
         <Icono id="i-arrow" clase="ico-arrow ico-s" />
       </button>
 
-      {lista.length > 1 && (
-        <Orden opciones={ORDENES_CLIENTE} valor={orden} alCambiar={setOrden} />
+      {(activos.length > 1 || q) && (
+        <Barra opciones={ORDENES_CLIENTE} valor={orden} alCambiar={cambiarOrden}
+          direccion={dir} alInvertir={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+          busqueda={q} alBuscar={setQ} ejemplo="Buscar por nombre, ubicación o rubro"
+          cuantos={lista.length} total={activos.length} />
       )}
 
       <div className="stack" data-tour="lista-clientes-todos">

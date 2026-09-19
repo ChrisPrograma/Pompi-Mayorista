@@ -356,8 +356,19 @@ export const altaProducto = (
     return { productos: [producto], precios: [precio] };
   }
 
+  /*
+   * El proveedor es opcional también acá, y ese era el bug.
+   *
+   * Antes esto tiraba "hace falta decir de qué proveedor es". La pantalla decía
+   * "opcional" al lado del proveedor, dejaba escribir todo, y recién al guardar
+   * fallaba — sin mostrar nada, porque la excepción no la agarraba nadie. El
+   * formulario quedaba abierto como si no hubieras tocado el botón.
+   *
+   * Que sea opcional es lo correcto: "estas diez unidades ya las tengo en casa"
+   * no se le compró a nadie hoy. Se registra como compra al contado sin
+   * proveedor, que es justo lo que la base permite desde la migración 008.
+   */
   const proveedorId = carga.proveedorId ?? args.proveedorId;
-  if (!proveedorId) throw new Error('Para cargar stock inicial hace falta decir de qué proveedor es');
 
   const compraId = ctx.nuevoId();
   const item: CompraItem = {
@@ -374,7 +385,7 @@ export const altaProducto = (
     compras: [{
       id: compraId,
       negocioId: e.negocioId,
-      proveedorId,
+      ...(proveedorId ? { proveedorId } : {}),
       fecha,
       // Contado: el stock que ya tenía en la casa no es una deuda nueva con el
       // proveedor. Si lo marcáramos en cuenta, le aparecería una deuda inventada.

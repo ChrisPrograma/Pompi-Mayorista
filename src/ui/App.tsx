@@ -109,6 +109,14 @@ export const App = () => {
   const [problemaDatos, setProblemaDatos] = useState<string | null>(null);
   /** Se incrementa para volver a intentar la descarga sin recargar la página. */
   const [intento, setIntento] = useState(0);
+  /**
+   * El error de la última vez que se intentó guardar una hoja.
+   *
+   * Existe porque sin esto una validación que falla no se ve: la excepción se
+   * perdía y la hoja quedaba abierta, igual que antes de tocar el botón. Desde
+   * afuera se siente como que la app se colgó.
+   */
+  const [errorHoja, setErrorHoja] = useState<string | null>(null);
   /** La hoja de "quién puede entrar", con la lista de mails autorizados. */
   const [hojaUsuarios, setHojaUsuarios] = useState(false);
   const [autorizados, setAutorizados] = useState<UsuarioAutorizado[] | null>(null);
@@ -283,6 +291,24 @@ export const App = () => {
   // ---- despacho ------------------------------------------------------------
   const ctx = (): Ctx => ({ nuevoId: () => uuidv7(), ahora: () => new Date().toISOString() });
 
+  /**
+   * Corre el guardado de una hoja y, si algo falla, lo MUESTRA.
+   *
+   * Todas las validaciones del dominio avisan tirando una excepción. Sin esto,
+   * esa excepción moría en el manejador del click: la hoja quedaba abierta, sin
+   * cartel y sin nada guardado. Es exactamente lo que pasaba al cargar un
+   * producto con unidades iniciales y sin proveedor, y lo que hacía que pareciera
+   * que el formulario se colgaba.
+   */
+  const guardando = (accion: () => void) => () => {
+    try {
+      setErrorHoja(null);
+      accion();
+    } catch (e) {
+      setErrorHoja(e instanceof Error ? e.message : 'No se pudo guardar. Probá de nuevo.');
+    }
+  };
+
   const despachar = useCallback(async (r: Resultado, ops: Operacion[]) => {
     setEstado((actual) => {
       if (!actual) return actual;
@@ -409,15 +435,15 @@ export const App = () => {
     salir: () => { salir(); setSesion(null); },
 
     nuevoCliente: (origen) => {
-      setF({}); setNuevoDia(null);
+      setF({}); setNuevoDia(null); setErrorHoja(null);
       setHojaCliente({ modo: 'alta', origen });
     },
 
     verCliente: (id) => setFichaCliente(id),
 
-    nuevoProducto: () => { setF({}); setHojaProdForm({ modo: 'alta' }); },
+    nuevoProducto: () => { setF({}); setErrorHoja(null); setHojaProdForm({ modo: 'alta' }); },
 
-    nuevoProveedor: () => { setF({}); setHojaProv({ modo: 'alta' }); },
+    nuevoProveedor: () => { setF({}); setErrorHoja(null); setHojaProv({ modo: 'alta' }); },
 
     verProveedor: (id) => setFichaProv(id),
 
@@ -672,7 +698,7 @@ export const App = () => {
       ops.push({
         tipo: 'registrar_compra', id: compra.id,
         payload: {
-          p_negocio_id: estado.negocioId, p_proveedor_id: compra.proveedorId,
+          p_negocio_id: estado.negocioId, p_proveedor_id: compra.proveedorId ?? null,
           p_items: compra.items.map((i) => ({
             producto_id: i.productoId, cantidad: i.cantidad,
             costo_unitario_cent: i.costoUnitarioCent,
@@ -1150,7 +1176,13 @@ export const App = () => {
               </div>
             </div>
 
-            <button className="btn lg block" disabled={!campo('nombre').trim()} onClick={guardarCliente}>
+            {errorHoja && (
+              <div style={{ marginBottom: 14 }}>
+                <Alerta tipo="bad" icono="i-alert" titulo="No se pudo guardar" texto={errorHoja} />
+              </div>
+            )}
+
+            <button className="btn lg block" disabled={!campo('nombre').trim()} onClick={guardando(guardarCliente)}>
               {editando ? 'Guardar los cambios'
                 : hojaCliente.origen === 'vender' ? 'Guardar y seguir con la venta'
                 : 'Guardar comercio'}
@@ -1260,6 +1292,13 @@ export const App = () => {
             </label>
 
             <label className="campo">
+              <span>Rubro <em>· opcional</em></span>
+              <input className="texto" value={campo('categoria')}
+                placeholder="Collares, juguetes, higiene"
+                onChange={(ev: ChangeEvent<HTMLInputElement>) => setCampo('categoria', ev.target.value)} />
+            </label>
+
+            <label className="campo">
               <span>Descripción <em>· opcional</em></span>
               <input className="texto" value={campo('descripcion')}
                 placeholder="Nylon reforzado con costura doble"
@@ -1334,9 +1373,15 @@ export const App = () => {
               </div>
             )}
 
+            {errorHoja && (
+              <div style={{ marginBottom: 14 }}>
+                <Alerta tipo="bad" icono="i-alert" titulo="No se pudo guardar" texto={errorHoja} />
+              </div>
+            )}
+
             <button className="btn lg block"
               disabled={!campo('nombre').trim() || (!editando && precioCent <= 0) || !!codigoRepetido}
-              onClick={guardarProducto}>
+              onClick={guardando(guardarProducto)}>
               {editando ? 'Guardar los cambios' : 'Guardar producto'}
             </button>
             <button className="btn outline block" style={{ marginTop: 9 }}
@@ -1409,7 +1454,13 @@ export const App = () => {
               onChange={(ev: ChangeEvent<HTMLInputElement>) => setCampo('contacto', ev.target.value)} />
           </label>
 
-          <button className="btn lg block" disabled={!campo('nombre').trim()} onClick={guardarProveedor}>
+          {errorHoja && (
+            <div style={{ marginBottom: 14 }}>
+              <Alerta tipo="bad" icono="i-alert" titulo="No se pudo guardar" texto={errorHoja} />
+            </div>
+          )}
+
+          <button className="btn lg block" disabled={!campo('nombre').trim()} onClick={guardando(guardarProveedor)}>
             {hojaProv.modo === 'editar' ? 'Guardar los cambios' : 'Guardar proveedor'}
           </button>
           <button className="btn outline block" style={{ marginTop: 9 }}
