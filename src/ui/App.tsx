@@ -1026,20 +1026,34 @@ export const App = () => {
     <div className={`app ${paso !== null ? 'en-recorrido' : ''}`}>
       <header className="hud">
         <div className="hud-top">
+         <div className="brand">
           {/*
-            * Un `<a href="/">` de verdad y no un botón.
+            * El enlace envuelve SOLO el ícono, como en Instagram o TikTok.
             *
-            * El clic común no navega: lo cancela y cambia de pantalla sin
+            * El clic común no navega: se cancela y se cambia de pantalla sin
             * recargar, que es lo que tiene que pasar en una app que funciona sin
             * señal — una recarga de verdad la dejaría en blanco hasta que el
             * service worker responda.
             *
-            * Pero el `href` está y apunta a la raíz, y eso es lo que hace que
-            * funcionen las cosas que un botón no puede: el clic derecho ofrece
-            * "copiar dirección", se puede arrastrar el ícono al escritorio para
-            * dejar un acceso directo, y ctrl+clic abre la app en otra pestaña.
+            * Pero el `href` está y apunta a la raíz, y eso habilita lo que un
+            * botón no puede: clic derecho para copiar la dirección, arrastrarlo
+            * al escritorio para dejar un acceso directo, y ctrl+clic para abrir
+            * la app en otra pestaña.
+            *
+            * `title` en el enlace Y en la imagen: es de ahí de donde Windows saca
+            * el NOMBRE del acceso directo. Sin eso quedaría "icono-192".
+            *
+            * El `aria-label` dice exactamente lo mismo, sin agregarle "ir al
+            * inicio" ni nada: el nombre accesible es otro de los textos que el
+            * navegador puede usar para el acceso directo, y cualquier cosa de
+            * más terminaría pegada en el nombre del archivo.
+            *
+            * `draggable={false}` en la imagen es lo que hace que funcione el
+            * arrastre. Si la imagen se puede arrastrar sola, el navegador le da
+            * prioridad y arrastra el archivo .png en vez del enlace.
             */}
-          <a className="brand" href="/"
+          <a className="brand-logo" href="/"
+            title={NEGOCIO} aria-label={NEGOCIO}
             onClick={(ev: MouseEvent<HTMLAnchorElement>) => {
               // Ctrl/⌘/shift/alt-clic y el botón del medio son "abrir en otra
               // pestaña". Si los cancelara, rompería lo que vine a habilitar.
@@ -1047,14 +1061,27 @@ export const App = () => {
               ev.preventDefault();
               irA('hoy');
             }}>
-            <span className="brand-mark">
-              <img src="icono-192.png" alt="" width={34} height={34} />
-            </span>
-            <span>
-              <span className="brand-name">{NEGOCIO}</span>
-              <span className="brand-sub">{fechaLarga(hoy)}</span>
-            </span>
+            {/*
+              * `icono-192.png` sin barra al principio: la ruta es relativa a
+              * propósito. El empaquetador la reescribe al nombre con hash, y el
+              * manifest declara el alcance de la app como `./`. Una ruta absoluta
+              * rompería las dos cosas.
+              */}
+            <img src="icono-192.png" alt={NEGOCIO} title={NEGOCIO}
+              width={34} height={34} draggable={false} />
           </a>
+
+          {/*
+            * El nombre y la fecha quedan AFUERA del enlace. Dos motivos: así el
+            * arrastre lleva el ícono limpio y no un bloque con la fecha de hoy
+            * pegada, y así el texto no toma el cursor de enlace.
+            */}
+          <div className="brand-texto">
+            <div className="brand-name">{NEGOCIO}</div>
+            <div className="brand-sub">{fechaLarga(hoy)}</div>
+          </div>
+         </div>
+
           <div className="hud-acciones">
             {pendientes.length > 0 && (
               <button className="hud-btn" aria-label="Precios para revisar" onClick={() => setHojaPrecios(true)}>
