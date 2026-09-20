@@ -1,0 +1,9 @@
+{
+  "//": "Chequeo de tipos de TODO el proyecto, tests incluidos, en un entorno sin npm. Es el que tiene que dar limpio antes de subir: mira exactamente los mismos archivos que `tsc --noEmit` del build de Vercel. `tsconfig.verificacion.json` saltea los tests y por eso NO alcanza — un import sin usar en un test pasa por ahí y rompe el deploy.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [],
+    "skipLibCheck": true
+  },
+  "include": ["src", "scripts/tipos-minimos"]
+}

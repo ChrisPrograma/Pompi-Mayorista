@@ -719,7 +719,7 @@ export const App = () => {
       setExito({
         titulo: 'Producto archivado',
         monto: r.productos![0].nombre,
-        texto: 'No te aparece más para vender ni para cargar en el auto. Las ventas viejas quedan como estaban.',
+        texto: 'No te aparece más para vender. Las ventas viejas y el stock que tenía quedan como estaban.',
         deltas: [{ etiqueta: 'Se puede reactivar', valor: 'sí' }],
       });
     }

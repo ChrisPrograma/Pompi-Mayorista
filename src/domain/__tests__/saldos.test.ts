@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { pesos } from '../money.ts';
 import { clasificar, saldoCliente, totalEnLaCalle } from '../saldos.ts';
-import type { MovimientoStock, PagoCliente, Producto, Venta } from '../types.ts';
+import type { PagoCliente, Venta } from '../types.ts';
 
 const HOY = '2026-09-13T12:00:00Z';
 
