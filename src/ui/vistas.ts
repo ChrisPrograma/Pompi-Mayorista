@@ -11,7 +11,7 @@
 import type { Cent } from '../domain/money.ts';
 import { gananciaDelPeriodo } from '../domain/precios.ts';
 import { clasificar, diasEntre, saldoCliente, type Antiguedad } from '../domain/saldos.ts';
-import { calcularCarga, calcularStock } from '../domain/stock.ts';
+import { calcularStock } from '../domain/stock.ts';
 import type { Uuid } from '../domain/types.ts';
 import { costoDe, historialPrecios, precioDe, type EstadoApp } from '../app/estado.ts';
 
@@ -36,10 +36,13 @@ export interface VistaHoy {
   enLaCalleCent: Cent;
   /** La deuda más vieja que pasó el umbral. Es la alerta que se muestra arriba. */
   alertaDeuda: DeudaVista | null;
-  faltanEnAuto: number;
   ruta: { clienteId: Uuid; nombre: string; zona?: string; visitado: boolean; saldoCent: Cent }[];
   ventasDeHoy: { id: Uuid; cliente: string; hora: string; totalCent: Cent; cobrado: boolean; items: number }[];
-  misiones: { venta: boolean; cobro: boolean; carga: boolean };
+  /**
+   * El día en dos pasos. Era en tres: el tercero era dejar el auto cargado, y se
+   * fue junto con el auto.
+   */
+  misiones: { venta: boolean; cobro: boolean };
 }
 
 export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
@@ -65,14 +68,11 @@ export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
       saldoCent: deudas.lista.find((d) => d.clienteId === c.id)?.saldoCent ?? 0,
     }));
 
-  const carga = calcularCarga(e.productos, e.movimientos);
-
   return {
     cobradoHoyCent,
     vendidoHoyCent: ventasHoy.reduce((a, v) => a + v.totalCent, 0),
     enLaCalleCent: deudas.totalCent,
     alertaDeuda: vencidas[0] ?? null,
-    faltanEnAuto: carga.reduce((a, c) => a + c.aCargar, 0),
     ruta,
     ventasDeHoy: ventasHoy
       .slice()
@@ -88,7 +88,6 @@ export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
     misiones: {
       venta: ventasHoy.length > 0,
       cobro: pagosHoy.length > 0,
-      carga: carga.length === 0,
     },
   };
 };
@@ -131,7 +130,7 @@ export const vistaDeudas = (
 };
 
 // ---------------------------------------------------------------------------
-// Vender / productos / auto
+// Vender / productos
 // ---------------------------------------------------------------------------
 
 export interface ProductoVista {
@@ -145,8 +144,11 @@ export interface ProductoVista {
   costoCent: Cent | null;
   gananciaCent: Cent | null;
   margen: number | null;
-  enDeposito: number;
-  enVehiculo: number;
+  /**
+   * Un solo número desde la migración 009. Antes eran dos, depósito y vehículo,
+   * y había que trasladar de uno al otro antes de salir a vender.
+   */
+  enStock: number;
   historial: { desde: string; hasta: string | null; precioCent: Cent }[];
 }
 
@@ -169,8 +171,7 @@ export const vistaProductos = (e: EstadoApp): ProductoVista[] => {
         costoCent,
         gananciaCent: ganancia,
         margen: ganancia !== null && precioCent ? ganancia / precioCent : null,
-        enDeposito: s?.deposito ?? 0,
-        enVehiculo: s?.vehiculo ?? 0,
+        enStock: s?.total ?? 0,
         historial: historialPrecios(e, p.id).map((h) => ({
           desde: h.vigenteDesde,
           hasta: h.vigenteHasta,
@@ -180,33 +181,29 @@ export const vistaProductos = (e: EstadoApp): ProductoVista[] => {
     });
 };
 
-/** Lo que se puede vender hoy: solo lo que está arriba del auto. */
+/**
+ * Lo que se puede vender: todo lo que tenga precio.
+ *
+ * Antes filtraba por lo que estuviera arriba del auto. Al sacar ese paso había
+ * dos opciones, y la que parece más prolija es la peligrosa:
+ *
+ *   - filtrar por `enStock > 0` — o sea, no dejarlo registrar la venta de algo
+ *     que el sistema cree que no tiene;
+ *   - mostrar todo lo que tenga precio, y que el stock quede en negativo si
+ *     hace falta.
+ *
+ * Va la segunda, por la misma razón que el libro mayor no valida stock: él ya
+ * hizo la venta, está parado en la vereda, y la plata ya cambió de mano. Un
+ * sistema que en ese momento le dice "no podés" no evita nada — lo único que
+ * logra es que la venta no quede anotada en ningún lado. El faltante se ve
+ * después, como un número en rojo que hay que revisar, que es un problema
+ * mucho más chico que una venta que no existe.
+ *
+ * Sin precio sí queda afuera: ahí no hay nada que cobrar y el total de la venta
+ * no se podría armar.
+ */
 export const vistaParaVender = (e: EstadoApp): ProductoVista[] =>
-  vistaProductos(e).filter((p) => p.enVehiculo > 0 && p.precioCent !== null);
-
-export interface CargaVista {
-  productoId: Uuid;
-  nombre: string;
-  enVehiculo: number;
-  enDeposito: number;
-  sugerido: number;
-  aCargar: number;
-  sinStock: number;
-}
-
-export const vistaAuto = (e: EstadoApp): { faltantes: CargaVista[]; totalACargar: number } => {
-  const stock = calcularStock(e.movimientos);
-  const faltantes = calcularCarga(e.productos, e.movimientos).map((c) => ({
-    productoId: c.productoId,
-    nombre: e.productos.find((p) => p.id === c.productoId)?.nombre ?? '—',
-    enVehiculo: c.enVehiculo,
-    enDeposito: stock.get(c.productoId)?.deposito ?? 0,
-    sugerido: c.sugerido,
-    aCargar: c.aCargar,
-    sinStock: c.sinStock,
-  }));
-  return { faltantes, totalACargar: faltantes.reduce((a, f) => a + f.aCargar, 0) };
-};
+  vistaProductos(e).filter((p) => p.precioCent !== null);
 
 // ---------------------------------------------------------------------------
 // Números

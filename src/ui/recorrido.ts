@@ -58,17 +58,12 @@ export const RECORRIDO: PasoRecorrido[] = [
   {
     ruta: 'vender', destaca: 'lista-productos', ventaEnCurso: true,
     titulo: 'Segundo: qué se lleva',
-    texto: 'Solo aparece lo que tenés arriba del auto. Tocás más o menos y el total se arma solo. No hay que escribir precios.',
+    texto: 'Aparece todo lo que tengas con precio, con el stock al lado. Tocás más o menos y el total se arma solo. No hay que escribir precios.',
   },
   {
     ruta: 'deudas', destaca: 'lista-deudas',
     titulo: 'Quién te debe, del más viejo al más nuevo',
     texto: 'Todo lo que está en la calle, ordenado por antigüedad: ese es el orden en el que conviene salir a cobrar. Podés registrar el pago entero o una parte.',
-  },
-  {
-    ruta: 'auto', destaca: 'sugerencia',
-    titulo: 'Qué cargar antes de salir',
-    texto: 'Mira lo que solés vender en la ruta y te dice cuánto te falta. Un botón y queda todo cargado.',
   },
   {
     ruta: 'ingreso', destaca: 'lista-proveedores',

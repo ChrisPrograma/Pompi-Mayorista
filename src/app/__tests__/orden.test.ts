@@ -20,7 +20,7 @@ import type { Cliente } from '../../domain/types.ts';
 
 const prod = (p: Partial<ProductoVista> & { id: string; nombre: string }): ProductoVista => ({
   precioCent: 100_000, costoCent: null, gananciaCent: null, margen: null,
-  enDeposito: 0, enVehiculo: 0, historial: [], ...p,
+  enStock: 0, historial: [], ...p,
 });
 
 const cli = (c: Partial<Cliente> & { id: string; nombre: string }): Cliente =>

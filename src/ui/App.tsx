@@ -4,7 +4,7 @@ import { pesos, type Cent } from '../domain/money.ts';
 import type { Uuid } from '../domain/types.ts';
 import {
   activarCliente, activarProducto, activarProveedor, altaCliente, altaProducto, altaProveedor,
-  aplicar, aplicarSugerencias, cambiarPrecio, cargarAuto, clienteParecido, cobrar,
+  aplicar, aplicarSugerencias, cambiarPrecio, clienteParecido, cobrar,
   descartarSugerencias, editarCliente, editarProducto, editarProveedor, entrarMercaderia,
   estadoVacio, precioDe, productoConCodigo, productoParecido, vender,
   type Ctx, type EstadoApp, type Resultado,
@@ -25,7 +25,7 @@ import { sugerenciasPendientes, vistaDeudas, type ProductoVista } from './vistas
 import { Alerta, Coach, Exito, Hoja, Icono, plata, type DatosExito } from './componentes.tsx';
 import { RECORRIDO } from './recorrido.ts';
 import {
-  PantallaAuto, PantallaClientes, PantallaCosas, PantallaDeudas, PantallaHoy,
+  PantallaClientes, PantallaCosas, PantallaDeudas, PantallaHoy,
   PantallaIngreso, PantallaNumeros, PantallaProductos, PantallaProveedores,
   PantallaVender, type Acciones, type Ruta,
 } from './pantallas.tsx';
@@ -39,7 +39,7 @@ const TABS: { id: Ruta; icono: string; texto: string; venta?: boolean }[] = [
 ];
 
 const PADRE: Partial<Record<Ruta, Ruta>> = {
-  productos: 'cosas', auto: 'cosas', clientes: 'cosas',
+  productos: 'cosas', clientes: 'cosas',
   ingreso: 'cosas', proveedores: 'cosas',
 };
 
@@ -482,27 +482,6 @@ export const App = () => {
 
     cobrar: (clienteId) => setHojaCobro(clienteId),
 
-    cargar: (movs) => {
-      const utiles = movs.filter((m) => m.cantidad !== 0);
-      if (!utiles.length) return;
-      const c = ctx();
-      const r = cargarAuto(estado, utiles, c);
-      void despachar(r, utiles.map((m) => ({
-        tipo: 'trasladar_stock' as const, id: uuidv7(),
-        payload: {
-          p_negocio_id: estado.negocioId, p_producto_id: m.productoId, p_cantidad: m.cantidad,
-        },
-      })));
-      const total = utiles.reduce((a, m) => a + Math.max(0, m.cantidad), 0);
-      if (total > 0) {
-        setExito({
-          titulo: 'Auto cargado', monto: `${total} u.`,
-          texto: 'Subiste lo que te faltaba para cubrir la ruta. Salís tranquilo.',
-          deltas: [{ etiqueta: 'Productos movidos', valor: String(utiles.length) }],
-        });
-      }
-    },
-
     entrar: (proveedorId, items, condicion) => {
       const c = ctx();
       const r = entrarMercaderia(estado, { proveedorId, items, condicionPago: condicion }, c);
@@ -896,7 +875,7 @@ export const App = () => {
   const rutaActiva = PADRE[ruta] ?? ruta;
   const Pantalla = {
     hoy: PantallaHoy, vender: PantallaVender, deudas: PantallaDeudas, cosas: PantallaCosas,
-    productos: PantallaProductos, auto: PantallaAuto, clientes: PantallaClientes,
+    productos: PantallaProductos, clientes: PantallaClientes,
     ingreso: PantallaIngreso, proveedores: PantallaProveedores, numeros: PantallaNumeros,
   }[ruta];
 
@@ -1011,8 +990,7 @@ export const App = () => {
             </div>
           )}
           <div className="kpi" style={{ marginTop: 12 }}>
-            <div><b>{hojaProducto.enDeposito}</b><span>en tu casa</span></div>
-            <div><b>{hojaProducto.enVehiculo}</b><span>en el auto</span></div>
+            <div><b>{hojaProducto.enStock}</b><span>en stock</span></div>
           </div>
           {hojaProducto.historial.length > 1 && (
             <div className="card" style={{ marginTop: 12 }}>

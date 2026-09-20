@@ -7,9 +7,21 @@
  * Consecuencia práctica: se puede borrar cualquier caché de stock y reconstruirlo
  * entero desde los movimientos, y el número va a dar igual. Si alguna vez no da
  * igual, el bug está en el caché, no acá.
+ *
+ * UN SOLO STOCK (desde la migración 009)
+ *
+ * Hubo dos ubicaciones, 'deposito' y 'vehiculo', y un paso de "cargar el auto"
+ * que movía mercadería de una a la otra. El cliente lo pidió sacar: vende desde
+ * la vereda y anotar dos veces la misma caja era, en sus palabras, "doble
+ * laburo".
+ *
+ * La ubicación sigue existiendo en el libro mayor porque los movimientos viejos
+ * siguen diciendo la verdad sobre lo que pasó en su momento, y porque un
+ * movimiento no se puede editar ni borrar. Lo que cambió es que de acá en más
+ * todo se anota en 'deposito' y la app muestra un solo número: `total`.
  */
 
-import type { MovimientoStock, Producto, Ubicacion, Uuid } from './types.ts';
+import type { MovimientoStock, Ubicacion, Uuid } from './types.ts';
 
 export interface StockProducto {
   productoId: Uuid;
@@ -49,7 +61,7 @@ export const stockDe = (
 };
 
 /**
- * Movimientos que genera una venta: sale del vehículo, que es de donde vende.
+ * Movimientos que genera una venta: sale del stock, que ahora es uno solo.
  *
  * No valida que haya stock suficiente a propósito. Si el sistema le impide
  * registrar una venta que ya hizo parado en la vereda, deja de usar el sistema.
@@ -68,74 +80,10 @@ export const movimientosDeVenta = (
     id: nuevoId(),
     negocioId: args.negocioId,
     productoId: it.productoId,
-    ubicacion: 'vehiculo' as const,
+    ubicacion: 'deposito' as const,
     cantidad: -it.cantidad,
     tipo: 'venta' as const,
     refTipo: 'venta' as const,
     refId: args.ventaId,
     fecha: args.fecha,
   }));
-
-/** Movimientos de un traslado casa → auto (cantidad > 0) o auto → casa (cantidad < 0). */
-export const movimientosDeTraslado = (
-  args: {
-    negocioId: Uuid;
-    productoId: Uuid;
-    cantidad: number;
-    fecha: string;
-  },
-  nuevoId: () => Uuid,
-): MovimientoStock[] => {
-  if (args.cantidad === 0) return [];
-  const abs = Math.abs(args.cantidad);
-  const origen: Ubicacion = args.cantidad > 0 ? 'deposito' : 'vehiculo';
-  const destino: Ubicacion = args.cantidad > 0 ? 'vehiculo' : 'deposito';
-  const base = {
-    negocioId: args.negocioId,
-    productoId: args.productoId,
-    tipo: 'traslado' as const,
-    fecha: args.fecha,
-  };
-  return [
-    { ...base, id: nuevoId(), ubicacion: origen, cantidad: -abs },
-    { ...base, id: nuevoId(), ubicacion: destino, cantidad: abs },
-  ];
-};
-
-export interface FaltanteCarga {
-  productoId: Uuid;
-  enVehiculo: number;
-  sugerido: number;
-  /** Cuánto se puede subir de verdad, limitado por lo que hay en la casa. */
-  aCargar: number;
-  /** Lo que falta y tampoco está en la casa: hay que comprarlo. */
-  sinStock: number;
-}
-
-/**
- * Qué falta cargar en el auto para cubrir una ruta típica.
- * Nunca sugiere cargar más de lo que hay en el depósito.
- */
-export const calcularCarga = (
-  productos: Producto[],
-  movimientos: MovimientoStock[],
-): FaltanteCarga[] => {
-  const stock = calcularStock(movimientos);
-
-  return productos
-    .filter((p) => p.activo && (p.sugeridoEnVehiculo ?? 0) > 0)
-    .map((p) => {
-      const s = stock.get(p.id) ?? { deposito: 0, vehiculo: 0, total: 0, productoId: p.id };
-      const sugerido = p.sugeridoEnVehiculo ?? 0;
-      const falta = Math.max(0, sugerido - s.vehiculo);
-      const aCargar = Math.min(falta, Math.max(0, s.deposito));
-      return {
-        productoId: p.id,
-        enVehiculo: s.vehiculo,
-        sugerido,
-        aCargar,
-        sinStock: falta - aCargar,
-      };
-    })
-    .filter((f) => f.aCargar > 0 || f.sinStock > 0);
-};

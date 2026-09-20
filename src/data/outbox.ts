@@ -33,6 +33,11 @@ export type Operacion =
   | { tipo: 'registrar_compra'; id: Uuid; payload: Record<string, unknown> }
   | { tipo: 'registrar_pago_cliente'; id: Uuid; payload: Record<string, unknown> }
   | { tipo: 'registrar_pago_proveedor'; id: Uuid; payload: Record<string, unknown> }
+  /*
+   * Ya no se genera ninguna: el traslado casa → auto se fue en la 009. Se deja
+   * porque un aparato que estuvo sin señal puede tener una esperando en la cola,
+   * y si el tipo no existiera se quedaría trabada para siempre.
+   */
   | { tipo: 'trasladar_stock'; id: Uuid; payload: Record<string, unknown> }
   | { tipo: 'cambiar_precio'; id: Uuid; payload: Record<string, unknown> }
   | { tipo: 'aplicar_sugerencia'; id: Uuid; payload: Record<string, unknown> }

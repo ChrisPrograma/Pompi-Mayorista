@@ -16,7 +16,7 @@ import { altaCliente, altaProducto, altaProveedor, aplicar, estadoVacio, vender 
 import { construirSemilla, idsSecuenciales } from '../semilla.ts';
 import { esDatosDeEjemplo, esIdReal, sinDatosDeEjemplo } from '../limpieza.ts';
 import {
-  sugerenciasPendientes, vistaAuto, vistaDeudas, vistaHoy, vistaNumeros,
+  sugerenciasPendientes, vistaDeudas, vistaHoy, vistaNumeros,
   vistaParaVender, vistaProductos, vistaProveedores,
 } from '../../ui/vistas.ts';
 
@@ -55,7 +55,6 @@ describe('el estado vacío', () => {
       deudas: vistaDeudas(e, HOY),
       productos: vistaProductos(e),
       paraVender: vistaParaVender(e),
-      auto: vistaAuto(e),
       numeros: vistaNumeros(e, HOY),
       proveedores: vistaProveedores(e),
       sugerencias: sugerenciasPendientes(e),
@@ -67,7 +66,6 @@ describe('el estado vacío', () => {
     const e = vacio();
     expect(vistaDeudas(e, HOY).totalCent).toBe(0);
     expect(vistaProveedores(e).totalCent).toBe(0);
-    expect(vistaAuto(e).totalACargar).toBe(0);
     const n = vistaNumeros(e, HOY);
     expect([n.ventasCent, n.costoCent, n.gananciaCent, n.margen]).toEqual([0, 0, 0, 0]);
   });
@@ -108,14 +106,7 @@ describe('desde cero hasta la primera venta', () => {
     e = aplicar(e, altaCliente(e, { nombre: 'Pet Shop del barrio' }, c));
     const clienteId = e.clientes[0].id;
 
-    // El stock entra al depósito, así que hay que subirlo al auto antes de vender.
-    e = aplicar(e, {
-      movimientos: [
-        { id: c.nuevoId(), negocioId: e.negocioId, productoId, ubicacion: 'deposito', cantidad: -4, tipo: 'traslado', fecha: HOY },
-        { id: c.nuevoId(), negocioId: e.negocioId, productoId, ubicacion: 'vehiculo', cantidad: 4, tipo: 'traslado', fecha: HOY },
-      ],
-    });
-
+    // Desde la 009 se vende directo del stock: no hay ningún paso en el medio.
     e = aplicar(e, vender(e, {
       clienteId,
       items: [{ productoId, cantidad: 2 }],

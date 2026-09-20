@@ -14,7 +14,6 @@ import {
   altaCliente,
   aplicar,
   aplicarSugerencias,
-  cargarAuto,
   clienteParecido,
   cobrar,
   costoDe,
@@ -26,15 +25,20 @@ import {
   type Ctx,
 } from '../estado.ts';
 import { construirSemilla, idsSecuenciales, semillaConDiaEnCurso } from '../semilla.ts';
-import { vistaAuto, vistaDeudas, vistaHoy, vistaNumeros, vistaParaVender } from '../../ui/vistas.ts';
+import { vistaDeudas, vistaHoy, vistaNumeros, vistaParaVender } from '../../ui/vistas.ts';
 
 const HOY = '2026-09-15T14:00:00.000Z'; // un martes
 const ctx = (): Ctx => ({ nuevoId: idsSecuenciales('t'), ahora: () => HOY });
 
 describe('vender', () => {
-  it('baja el stock del auto y deja el precio y el costo congelados', () => {
+  it('baja el stock y deja el precio y el costo congelados', () => {
+    /*
+     * Desde la 009 hay un solo stock. Lo que se controla acá es el total, que es
+     * el número que él ve: una venta de 10 tiene que bajarlo en 10, venga de
+     * donde venga esa mercadería en el libro mayor.
+     */
     const e0 = construirSemilla(HOY);
-    const antes = calcularStock(e0.movimientos).get('p1')!.vehiculo;
+    const antes = calcularStock(e0.movimientos).get('p1')!.total;
 
     const e1 = aplicar(e0, vender(e0, {
       clienteId: 'c1',
@@ -42,10 +46,7 @@ describe('vender', () => {
       formaPago: 'efectivo',
     }, ctx()));
 
-    expect(calcularStock(e1.movimientos).get('p1')!.vehiculo).toBe(antes - 10);
-    // El depósito no se toca: vende de lo que lleva arriba del auto.
-    expect(calcularStock(e1.movimientos).get('p1')!.deposito)
-      .toBe(calcularStock(e0.movimientos).get('p1')!.deposito);
+    expect(calcularStock(e1.movimientos).get('p1')!.total).toBe(antes - 10);
 
     const linea = e1.ventas.at(-1)!.items[0];
     expect(linea.precioUnitarioCent).toBe(precioDe(e0, 'p1'));
@@ -160,31 +161,6 @@ describe('cobrar', () => {
   });
 });
 
-describe('cargar el auto', () => {
-  it('mueve del depósito al vehículo sin cambiar el total', () => {
-    const e0 = construirSemilla(HOY);
-    const totalAntes = calcularStock(e0.movimientos).get('p13')!.total;
-
-    const { faltantes } = vistaAuto(e0);
-    const p13 = faltantes.find((f) => f.productoId === 'p13')!;
-    expect(p13.aCargar).toBeGreaterThan(0);
-
-    const e1 = aplicar(e0, cargarAuto(e0, [{ productoId: 'p13', cantidad: p13.aCargar }], ctx()));
-    const s = calcularStock(e1.movimientos).get('p13')!;
-
-    expect(s.vehiculo).toBe(p13.enVehiculo + p13.aCargar);
-    expect(s.total).toBe(totalAntes); // no se creó ni se destruyó mercadería
-  });
-
-  it('después de cargar todo lo sugerido, no queda faltante', () => {
-    const e0 = construirSemilla(HOY);
-    const { faltantes } = vistaAuto(e0);
-    const e1 = aplicar(e0, cargarAuto(e0,
-      faltantes.map((f) => ({ productoId: f.productoId, cantidad: f.aCargar })), ctx()));
-    expect(vistaAuto(e1).totalACargar).toBe(0);
-  });
-});
-
 describe('entrar mercadería y decidir precios', () => {
   it('sube el stock del depósito y deja una sugerencia por cada costo que subió', () => {
     const e0 = construirSemilla(HOY);
@@ -296,11 +272,62 @@ describe('las pantallas muestran lo que corresponde', () => {
     expect(v.alertaDeuda!.dias).toBe(41);
   });
 
-  it('solo se puede vender lo que está arriba del auto', () => {
+  it('se puede vender todo lo que tenga precio, tenga stock o no', () => {
+    /*
+     * El cambio de contrato de la 009, y el que más conviene tener escrito.
+     *
+     * Antes la lista de venta mostraba solo lo que estuviera arriba del auto.
+     * Ahora muestra todo lo que tenga precio, incluso con el stock en cero o en
+     * negativo: él ya hizo la venta parado en la vereda y lo único que queda por
+     * decidir es si el sistema la anota o la pierde.
+     *
+     * Lo único que queda afuera es lo que no tiene precio, porque ahí no habría
+     * con qué armar el total.
+     */
     const e = construirSemilla(HOY);
     const vendibles = vistaParaVender(e);
+
     expect(vendibles.length).toBeGreaterThan(0);
-    expect(vendibles.every((p) => p.enVehiculo > 0)).toBe(true);
+    expect(vendibles.every((p) => p.precioCent !== null)).toBe(true);
+
+    // Un producto sin una sola unidad tiene que seguir apareciendo.
+    const sinStock = vendibles.filter((p) => p.enStock <= 0);
+    const conStock = vendibles.filter((p) => p.enStock > 0);
+    expect(conStock.length).toBeGreaterThan(0);
+    expect(vendibles.length).toBe(sinStock.length + conStock.length);
+  });
+
+  it('el movimiento de la venta se anota en el único stock que hay', () => {
+    /*
+     * Parece un detalle interno y no lo es: la misma venta la puede anotar el
+     * aparato (esta función) o el servidor (`registrar_venta`, migración 009), y
+     * si los dos no escriben la misma ubicación, el mismo movimiento queda
+     * distinto según por dónde entró. El total no cambiaría, pero el libro mayor
+     * diría dos cosas diferentes sobre el mismo hecho.
+     */
+    const e0 = construirSemilla(HOY);
+    const e1 = aplicar(e0, vender(e0, {
+      clienteId: 'c1', items: [{ productoId: 'p1', cantidad: 1 }], formaPago: 'efectivo',
+    }, ctx()));
+
+    const nuevos = e1.movimientos.filter((m) => !e0.movimientos.some((v) => v.id === m.id));
+    expect(nuevos).toHaveLength(1);
+    expect(nuevos[0].ubicacion).toBe('deposito');
+    expect(nuevos[0].tipo).toBe('venta');
+  });
+
+  it('vender más de lo que figura no rompe nada: el stock queda en negativo', () => {
+    const e0 = construirSemilla(HOY);
+    const hay = calcularStock(e0.movimientos).get('p1')!.total;
+
+    const e1 = aplicar(e0, vender(e0, {
+      clienteId: 'c1',
+      items: [{ productoId: 'p1', cantidad: hay + 5 }],
+      formaPago: 'efectivo',
+    }, ctx()));
+
+    expect(calcularStock(e1.movimientos).get('p1')!.total).toBe(-5);
+    expect(e1.ventas.at(-1)!.items[0].cantidad).toBe(hay + 5);
   });
 
   it('los números del mes usan el costo congelado de cada venta', () => {

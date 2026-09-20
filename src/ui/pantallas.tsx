@@ -4,7 +4,6 @@ import type { Uuid } from '../domain/types.ts';
 import type { EstadoApp } from '../app/estado.ts';
 import {
   sugerenciasPendientes,
-  vistaAuto,
   cuantosActivos,
   vistaDeudas,
   vistaHoy,
@@ -25,13 +24,12 @@ import { Alerta, Cantidad, Icono, claseCategoria, plata, plataCorta } from './co
 
 export type Ruta =
   | 'hoy' | 'vender' | 'deudas' | 'cosas'
-  | 'productos' | 'auto' | 'clientes' | 'ingreso' | 'proveedores' | 'numeros';
+  | 'productos' | 'clientes' | 'ingreso' | 'proveedores' | 'numeros';
 
 export interface Acciones {
   ir: (r: Ruta) => void;
   vender: (clienteId: Uuid, items: { productoId: Uuid; cantidad: number }[], forma: 'efectivo' | 'transferencia' | 'cuenta') => void;
   cobrar: (clienteId: Uuid) => void;
-  cargar: (movs: { productoId: Uuid; cantidad: number }[]) => void;
   entrar: (proveedorId: Uuid, items: { productoId: Uuid; cantidad: number; costoUnitarioCent: Cent }[], condicion: 'contado' | 'cuenta') => void;
   verProducto: (p: ProductoVista) => void;
   nuevoCliente: (origen: 'vender' | 'clientes') => void;
@@ -141,15 +139,14 @@ function Barra<T extends string>({
 export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
   const v = useMemo(() => vistaHoy(estado, hoy), [estado, hoy]);
   const pend = sugerenciasPendientes(estado);
-  const hechas = Number(v.misiones.venta) + Number(v.misiones.cobro) + Number(v.misiones.carga);
+  const hechas = Number(v.misiones.venta) + Number(v.misiones.cobro);
 
   /*
    * Primer día: la app está vacía porque recién se creó la cuenta.
    *
    * Acá NO va la pantalla normal con todo en cero. Dos razones. La primera es
-   * que mentiría: "el auto está cargado" con cero productos es literalmente
-   * falso, y "tu día en 3 pasos" le pide vender antes de tener qué vender. La
-   * segunda es la que importa — abandonó dos o tres sistemas antes porque
+   * que mentiría: "tu día en 2 pasos" le pide vender antes de tener qué vender.
+   * La segunda es la que importa — abandonó dos o tres sistemas antes porque
    * "siempre me tranco con algo", y el momento de trancarse es justo este, con
    * una app en blanco y ninguna indicación de por dónde empezar.
    *
@@ -228,33 +225,28 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
         </div>
       )}
 
-      {/* Sin productos, "el auto está cargado" sería falso: no hay nada que cargar. */}
-      {cuantosActivos(estado.productos) === 0 ? (
+      {/*
+        * Sin productos no hay nada que vender, y es lo único que hay que decirle
+        * acá. El cartel de "el auto está cargado" se fue con el auto: un solo
+        * stock no tiene dos estados posibles que valga la pena avisar.
+        */}
+      {cuantosActivos(estado.productos) === 0 && (
         <Alerta tipo="warn" icono="i-box" titulo="Todavía no cargaste productos"
-          texto="Sin productos no podés vender ni cargar el auto. Es lo primero."
+          texto="Sin productos no podés vender. Es lo primero."
           accion={{ texto: 'Cargar', alTocar: () => acc.ir('productos') }} />
-      ) : v.faltanEnAuto > 0 ? (
-        <Alerta tipo="warn" icono="i-truck"
-          titulo={`Te faltan ${v.faltanEnAuto} unidades en el auto`}
-          texto="Para cubrir la ruta sin quedarte corto."
-          accion={{ texto: 'Cargar', alTocar: () => acc.ir('auto') }} />
-      ) : (
-        <Alerta tipo="ok" icono="i-check" titulo="El auto está cargado"
-          texto="Tenés todo lo que necesitás para la ruta." />
       )}
 
       <div className="misiones" data-tour="misiones">
         <div className="mis-head">
           <Icono id="i-star" />
-          <h3>Tu día en 3 pasos</h3>
-          <span className="mis-count">{hechas} de 3</span>
+          <h3>Tu día en 2 pasos</h3>
+          <span className="mis-count">{hechas} de 2</span>
         </div>
-        <div className="progress"><i style={{ width: `${(hechas / 3) * 100}%` }} /></div>
+        <div className="progress"><i style={{ width: `${(hechas / 2) * 100}%` }} /></div>
         <ul className="mis-list">
           {([
             ['venta', 'Hacer una venta', 'vender'],
             ['cobro', 'Cobrar una deuda', 'deudas'],
-            ['carga', 'Dejar el auto cargado', 'auto'],
           ] as const).map(([k, texto, destino]) => (
             <li key={k} className={v.misiones[k] ? 'done' : ''}>
               <span className="tick"><Icono id="i-check" clase="ico-s" /></span>
@@ -391,7 +383,7 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
             : 'Está al día con vos.'}
           accion={{ texto: 'Cambiar', alTocar: () => setPaso(1) }} />
 
-        <p className="eyebrow">Lo que tenés en el auto</p>
+        <p className="eyebrow">Qué le vendés</p>
         <div className="stack" data-tour="lista-productos">
           {/*
             * Esta lista sale de `vistaParaVender`, que muestra lo que hay EN EL
@@ -404,9 +396,14 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
                 texto="Sin productos no hay nada para vender. Se cargan una sola vez y quedan."
                 accion={{ texto: 'Cargar', alTocar: () => acc.ir('productos') }} />
             ) : (
-              <Alerta tipo="warn" icono="i-truck" titulo="No tenés nada arriba del auto"
-                texto="Los productos están en la casa. Pasá por 'Lo que llevo en el auto' y cargá lo que vas a vender hoy."
-                accion={{ texto: 'Cargar el auto', alTocar: () => acc.ir('auto') }} />
+              /*
+               * Hay productos pero ninguno aparece: a todos les falta el precio.
+               * Antes este caso era "no tenés nada arriba del auto"; sin el auto,
+               * el único motivo que queda es ese, y conviene decirlo exacto.
+               */
+              <Alerta tipo="warn" icono="i-tag" titulo="Ninguno tiene precio de venta"
+                texto="Para vender algo hace falta saber a cuánto. Ponéselo en la ficha del producto."
+                accion={{ texto: 'Ver productos', alTocar: () => acc.ir('productos') }} />
             )
           )}
           {productos.map((p) => (
@@ -414,9 +411,18 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
               <span className={`thumb ${claseCategoria(p.categoria)}`}><Icono id="i-box" /></span>
               <span className="row-main">
                 <b>{p.nombre}</b>
-                <span>{plata(p.precioCent!)} c/u · quedan {p.enVehiculo}</span>
+                {/*
+                  * Sin tope en la cantidad, a propósito. El stock que muestra es
+                  * lo que el sistema cree que hay, y puede estar atrasado: si él
+                  * ya vendió seis y la app dice cuatro, lo que está mal es la
+                  * app. Poner un máximo acá haría que la venta no se anote.
+                  */}
+                <span>
+                  {plata(p.precioCent!)} c/u
+                  {p.enStock > 0 ? ` · quedan ${p.enStock}` : ' · sin stock anotado'}
+                </span>
               </span>
-              <Cantidad valor={items[p.id] ?? 0} maximo={p.enVehiculo}
+              <Cantidad valor={items[p.id] ?? 0}
                 alCambiar={(n) => setItems({ ...items, [p.id]: Math.max(0, n) })} />
             </div>
           ))}
@@ -558,9 +564,7 @@ export const PantallaDeudas = ({ estado, hoy, acc }: Props) => {
 // ---------------------------------------------------------------------------
 export const PantallaCosas = ({ estado, acc }: Props) => {
   const prov = vistaProveedores(estado);
-  const auto = vistaAuto(estado);
   const pend = sugerenciasPendientes(estado);
-  const enAuto = vistaProductos(estado).reduce((a, p) => a + p.enVehiculo, 0);
   // Los mismos que muestran las listas: archivar tiene que bajar el número.
   const nProductos = cuantosActivos(estado.productos);
   const nClientes = cuantosActivos(estado.clientes);
@@ -580,10 +584,6 @@ export const PantallaCosas = ({ estado, acc }: Props) => {
         <button onClick={() => acc.ir('ingreso')}>
           <span className="thumb"><Icono id="i-inbox" /></span>
           <b>Me llegó mercadería</b><span>Entrás lo que te trajo el proveedor</span>
-        </button>
-        <button onClick={() => acc.ir('auto')}>
-          <span className="thumb c-juguete"><Icono id="i-truck" /></span>
-          <b>Lo que llevo en el auto</b><span>{enAuto} unidades cargadas</span>
         </button>
         <button onClick={() => acc.ir('productos')}>
           <span className="thumb"><Icono id="i-box" /></span>
@@ -614,11 +614,7 @@ export const PantallaCosas = ({ estado, acc }: Props) => {
         </button>
       </div>
 
-      {auto.totalACargar > 0 && (
-        <Alerta tipo="warn" icono="i-truck" titulo={`Te faltan ${auto.totalACargar} unidades en el auto`}
-          texto="Todavía no cargaste todo lo que la ruta necesita."
-          accion={{ texto: 'Cargar', alTocar: () => acc.ir('auto') }} />
-      )}
+
 
       {/* Solo aparece si entró con su cuenta. Va acá abajo y no en un menú: es
           algo que hace una vez por año, y esconderlo en un engranaje sería peor. */}
@@ -678,7 +674,7 @@ export const PantallaProductos = ({ estado, acc }: Props) => {
             <span className={`thumb ${claseCategoria(p.categoria)}`}><Icono id="i-box" /></span>
             <span className="row-main">
               <b>{p.codigo ? <><span className="cod">{p.codigo}</span> {p.nombre}</> : p.nombre}</b>
-              <span>{[p.variante, `${p.enDeposito + p.enVehiculo} unidades`].filter(Boolean).join(' · ')}</span>
+              <span>{[p.variante, `${p.enStock} unidades`].filter(Boolean).join(' · ')}</span>
             </span>
             <span className="row-end">
               <b>{p.precioCent !== null ? plata(p.precioCent) : '—'}</b>
@@ -690,67 +686,6 @@ export const PantallaProductos = ({ estado, acc }: Props) => {
             </span>
           </button>
         ))}
-      </div>
-    </div>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Lo que llevo en el auto
-// ---------------------------------------------------------------------------
-export const PantallaAuto = ({ estado, acc }: Props) => {
-  const v = useMemo(() => vistaAuto(estado), [estado]);
-  const productos = useMemo(() => vistaProductos(estado), [estado]);
-
-  return (
-    <div className="view">
-      <Volver acc={acc} />
-      <div className="section-h"><h2>Lo que llevo en el auto</h2></div>
-
-      {/*
-        * El orden de los casos importa: sin productos cargados, "estás listo
-        * para salir" sería una mentira con cara de buena noticia. Primero se
-        * pregunta si hay algo, después si falta algo.
-        */}
-      {productos.length === 0 ? (
-        <div data-tour="sugerencia">
-          <Alerta tipo="warn" icono="i-box" titulo="Todavía no hay productos"
-            texto="El auto se carga con lo que tenés en la casa. Primero cargá tus productos."
-            accion={{ texto: 'Ir', alTocar: () => acc.ir('productos') }} />
-        </div>
-      ) : v.totalACargar > 0 ? (
-        <div data-tour="sugerencia">
-          <Alerta tipo="warn" icono="i-truck" titulo={`Te faltan ${v.totalACargar} unidades`}
-            texto="Calculado con lo que solés vender en esta ruta." />
-          <button className="btn accent block lg"
-            onClick={() => acc.cargar(v.faltantes.map((f) => ({ productoId: f.productoId, cantidad: f.aCargar })))}>
-            Cargar lo que me falta
-          </button>
-        </div>
-      ) : (
-        <div data-tour="sugerencia">
-          <Alerta tipo="ok" icono="i-check" titulo="Estás listo para salir"
-            texto="El auto tiene todo lo que la ruta necesita." />
-        </div>
-      )}
-
-      <p className="eyebrow">Producto por producto</p>
-      <div className="stack">
-        {productos.map((p) => {
-          const f = v.faltantes.find((x) => x.productoId === p.id);
-          return (
-            <div className="row" key={p.id}>
-              <span className={`thumb ${claseCategoria(p.categoria)}`}><Icono id="i-box" /></span>
-              <span className="row-main">
-                <b>{p.nombre}</b>
-                <span>en casa quedan {p.enDeposito}{f && f.aCargar > 0 ? ` · te faltan ${f.aCargar}` : ''}</span>
-              </span>
-              <Cantidad valor={p.enVehiculo} minimo={0}
-                maximo={p.enVehiculo + p.enDeposito}
-                alCambiar={(n) => acc.cargar([{ productoId: p.id, cantidad: n - p.enVehiculo }])} />
-            </div>
-          );
-        })}
       </div>
     </div>
   );

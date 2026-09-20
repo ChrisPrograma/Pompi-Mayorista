@@ -176,6 +176,10 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .hub .thumb{width:40px;height:40px}
 .hub b{font-size:16.5px;font-weight:700;line-height:1.2}
 .hub span{font-size:15.5px;color:var(--ink-3);line-height:1.25;margin-top:auto}
+/* Al sacar la tarjeta del auto quedaron cinco: la última se quedaba sola en
+   media fila. Si son impares, la última ocupa el ancho entero y la grilla
+   cierra. Se acomoda sola si algún día vuelven a ser pares. */
+.hub button:last-child:nth-child(odd){grid-column:1/-1;min-height:0}
 
 .hero-n{padding:18px 16px 16px;text-align:center;background:linear-gradient(165deg,var(--brand-deep),var(--brand));color:#fff;border-radius:var(--r-l)}
 .hero-n span{font-size:14px;opacity:.82;letter-spacing:.05em;text-transform:uppercase;font-weight:600}
@@ -185,6 +189,9 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .kpi>div{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-m);padding:12px 13px}
 .kpi b{display:block;font-family:'Archivo';font-size:22px;font-variant-numeric:tabular-nums;font-weight:700}
 .kpi span{font-size:15.5px;color:var(--ink-3)}
+/* La ficha del producto tenía dos números, "en tu casa" y "en el auto". Ahora
+   hay uno solo y a media caja se veía cortado. */
+.kpi>div:only-child{grid-column:1/-1}
 
 .chart{display:flex;align-items:flex-end;gap:7px;height:150px;padding-top:22px}
 .cbar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:6px;position:relative}

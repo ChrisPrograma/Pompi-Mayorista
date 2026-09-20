@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pesos } from '../money.ts';
 import { clasificar, saldoCliente, totalEnLaCalle } from '../saldos.ts';
-import { calcularCarga } from '../stock.ts';
 import type { MovimientoStock, PagoCliente, Producto, Venta } from '../types.ts';
 
 const HOY = '2026-09-13T12:00:00Z';
@@ -74,44 +73,5 @@ describe('cuenta corriente de clientes', () => {
       venta('v3', 'c3', '2026-08-03T10:00:00Z', 231000),
     ];
     expect(totalEnLaCalle(ventas, [], HOY)).toBe(pesos(441800));
-  });
-});
-
-describe('qué cargar en el auto', () => {
-  const productos: Producto[] = [
-    { id: 'p1', negocioId: 'n1', nombre: 'Collar', unidad: 'unidad', activo: true, sugeridoEnVehiculo: 30 },
-    { id: 'p2', negocioId: 'n1', nombre: 'Pelota', unidad: 'unidad', activo: true, sugeridoEnVehiculo: 60 },
-    { id: 'p3', negocioId: 'n1', nombre: 'Cucha', unidad: 'unidad', activo: true, sugeridoEnVehiculo: 4 },
-  ];
-
-  const m = (productoId: string, ubicacion: 'deposito' | 'vehiculo', cantidad: number): MovimientoStock => ({
-    id: `${productoId}-${ubicacion}`,
-    negocioId: 'n1',
-    productoId,
-    ubicacion,
-    cantidad,
-    tipo: 'compra',
-    fecha: '2026-09-01T00:00:00Z',
-  });
-
-  it('calcula lo que falta sin pasarse de lo que hay en la casa', () => {
-    const movs = [
-      m('p1', 'deposito', 84), m('p1', 'vehiculo', 24),  // faltan 6, hay de sobra
-      m('p2', 'deposito', 10), m('p2', 'vehiculo', 48),  // faltan 12, solo hay 10
-      m('p3', 'deposito', 12), m('p3', 'vehiculo', 4),   // ya está completo
-    ];
-    const carga = calcularCarga(productos, movs);
-
-    expect(carga).toEqual([
-      { productoId: 'p1', enVehiculo: 24, sugerido: 30, aCargar: 6, sinStock: 0 },
-      { productoId: 'p2', enVehiculo: 48, sugerido: 60, aCargar: 10, sinStock: 2 },
-    ]);
-  });
-
-  it('no sugiere cargar de un depósito vacío', () => {
-    const carga = calcularCarga(productos, [m('p1', 'vehiculo', 0)]);
-    const p1 = carga.find((c) => c.productoId === 'p1')!;
-    expect(p1.aCargar).toBe(0);
-    expect(p1.sinStock).toBe(30);
   });
 });

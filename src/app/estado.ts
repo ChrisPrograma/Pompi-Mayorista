@@ -12,7 +12,7 @@
 
 import { porCantidad, type Cent } from '../domain/money.ts';
 import { cerrarYAbrir, precioVigente, sugerirPrecio } from '../domain/precios.ts';
-import { movimientosDeTraslado, movimientosDeVenta } from '../domain/stock.ts';
+import { movimientosDeVenta } from '../domain/stock.ts';
 import type {
   Cliente,
   Compra,
@@ -707,21 +707,6 @@ export const entrarMercaderia = (
   return { compras: [compra], movimientos, sugerencias };
 };
 
-/** Cargar el auto: dos movimientos por producto, ninguno pisa nada. */
-export const cargarAuto = (
-  e: EstadoApp,
-  movimientosPedidos: { productoId: Uuid; cantidad: number }[],
-  ctx: Ctx,
-): Resultado => {
-  const fecha = ctx.ahora();
-  const movimientos = movimientosPedidos.flatMap((m) =>
-    movimientosDeTraslado(
-      { negocioId: e.negocioId, productoId: m.productoId, cantidad: m.cantidad, fecha },
-      ctx.nuevoId,
-    ),
-  );
-  return { movimientos };
-};
 
 /** Registrar un cobro. */
 export const cobrar = (
