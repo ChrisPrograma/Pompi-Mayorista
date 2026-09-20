@@ -189,6 +189,9 @@ export const transporte: Transporte = {
         return rpc('registrar_venta', { p_id: op.id, ...op.payload });
       case 'registrar_compra':
         return rpc('registrar_compra', { p_id: op.id, ...op.payload });
+      // El p_id de la compra viaja en el payload: esta operación tiene id propio.
+      case 'anular_compra':
+        return rpc('anular_compra', op.payload);
       case 'trasladar_stock':
         return rpc('trasladar_stock', { p_id: op.id, ...op.payload });
       case 'cambiar_precio':

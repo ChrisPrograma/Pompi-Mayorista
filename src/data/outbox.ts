@@ -44,7 +44,26 @@ export type Operacion =
   /** Catálogo. Sirven para el alta y para la edición: es la misma fila por id. */
   | { tipo: 'guardar_cliente'; id: Uuid; payload: Record<string, unknown> }
   | { tipo: 'guardar_producto'; id: Uuid; payload: Record<string, unknown> }
-  | { tipo: 'guardar_proveedor'; id: Uuid; payload: Record<string, unknown> };
+  | { tipo: 'guardar_proveedor'; id: Uuid; payload: Record<string, unknown> }
+  /*
+   * Anular un ingreso. Es la única operación que NO usa como id el de la fila
+   * que toca: la compra ya tiene su `registrar_compra` en la cola con ese id, y
+   * la cola guarda por id, así que reusarlo pisaría el alta y la compra nunca
+   * llegaría al servidor. Lleva un id propio y la compra va en el payload.
+   */
+  | { tipo: 'anular_compra'; id: Uuid; payload: { p_id: Uuid } & Record<string, unknown> };
+
+/**
+ * Qué filas toca una operación.
+ *
+ * Sirve para una sola cosa, pero importante: la descarga no pisa lo que todavía
+ * está esperando subir. Esa regla miraba el id de la operación, que casi siempre
+ * ES el de la fila. `anular_compra` es la excepción —tiene id propio—, así que
+ * sin esto una descarga hecha entre la anulación y su subida devolvería la
+ * compra sin anular y el stock volvería a estar mal.
+ */
+export const idsAfectados = (op: Operacion): Uuid[] =>
+  op.tipo === 'anular_compra' ? [op.id, op.payload.p_id] : [op.id];
 
 export type EstadoItem = 'pendiente' | 'enviando' | 'error';
 

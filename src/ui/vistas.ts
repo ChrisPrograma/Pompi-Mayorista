@@ -13,7 +13,7 @@ import { gananciaDelPeriodo } from '../domain/precios.ts';
 import { clasificar, diasEntre, saldoCliente, type Antiguedad } from '../domain/saldos.ts';
 import { diaDeSemanaLocal, diaLocal, diaLocalDesplazado, horaLocal, mismoDiaLocal } from '../domain/fechas.ts';
 import { calcularStock } from '../domain/stock.ts';
-import type { Uuid, Venta } from '../domain/types.ts';
+import type { Compra, Uuid, Venta } from '../domain/types.ts';
 import type { DatosRecibo } from './recibo.ts';
 import { costoDe, historialPrecios, precioDe, type EstadoApp } from '../app/estado.ts';
 
@@ -55,6 +55,9 @@ export interface VistaHoy {
     estado: 'cobrado' | 'parcial' | 'debe';
     items: number;
   }[];
+  /** Las compras del día. Las anuladas siguen apareciendo, marcadas. */
+  ingresosDeHoy: IngresoVista[];
+  ingresadoHoyCent: Cent;
   /**
    * El día en dos pasos. Era en tres: el tercero era dejar el auto cargado, y se
    * fue junto con el auto.
@@ -62,12 +65,50 @@ export interface VistaHoy {
   misiones: { venta: boolean; cobro: boolean };
 }
 
+export interface IngresoVista {
+  id: Uuid;
+  proveedor: string;
+  hora: string;
+  totalCent: Cent;
+  condicionPago: 'contado' | 'cuenta';
+  /** Cuántas unidades entraron en total. */
+  unidades: number;
+  /** Cuántos productos distintos, para el resumen de la tarjeta. */
+  productos: number;
+  anulada: boolean;
+}
+
+/**
+ * Los ingresos de un día, o todos los de un proveedor.
+ *
+ * Las compras anuladas NO se esconden. Esconderlas sería lo cómodo y lo
+ * equivocado: él anuló algo y tiene que poder ver qué anuló, sobre todo si se
+ * equivocó al anular. Salen marcadas y con el total tachado.
+ */
+export const vistaIngresos = (e: EstadoApp, compras: Compra[]): IngresoVista[] =>
+  compras
+    .slice()
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))
+    .map((c) => ({
+      id: c.id,
+      proveedor: c.proveedorId
+        ? e.proveedores.find((p) => p.id === c.proveedorId)?.nombre ?? '—'
+        : 'Sin proveedor',
+      hora: horaLocal(c.fecha),
+      totalCent: c.totalCent,
+      condicionPago: c.condicionPago,
+      unidades: c.items.reduce((a, i) => a + i.cantidad, 0),
+      productos: c.items.length,
+      anulada: Boolean(c.anuladaEn),
+    }));
+
 export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
   const deudas = vistaDeudas(e, hoyIso);
   const diaSemana = diaDeSemanaLocal(hoyIso);
 
   const ventasHoy = e.ventas.filter((v) => mismoDia(v.fecha, hoyIso));
   const pagosHoy = e.pagos.filter((p) => mismoDia(p.fecha, hoyIso));
+  const comprasHoy = e.compras.filter((c) => mismoDia(c.fecha, hoyIso));
 
   const cobradoHoyCent =
     ventasHoy.reduce((a, v) => a + v.cobradoCent, 0) +
@@ -105,6 +146,11 @@ export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
           : 'debe' as const,
         items: v.items.reduce((a, i) => a + i.cantidad, 0),
       })),
+    ingresosDeHoy: vistaIngresos(e, comprasHoy),
+    // Las anuladas no suman: el total del día es lo que de verdad entró.
+    ingresadoHoyCent: comprasHoy
+      .filter((c) => !c.anuladaEn)
+      .reduce((a, c) => a + c.totalCent, 0),
     misiones: {
       venta: ventasHoy.length > 0,
       cobro: pagosHoy.length > 0,
@@ -317,7 +363,8 @@ export const vistaProveedores = (
     .filter((p) => p.activo)
     .map((p) => {
       const enCuenta = e.compras
-        .filter((c) => c.proveedorId === p.id && c.condicionPago === 'cuenta')
+        // Una compra anulada no genera deuda: la plata vuelve sola a donde estaba.
+        .filter((c) => c.proveedorId === p.id && c.condicionPago === 'cuenta' && !c.anuladaEn)
         .sort((a, b) => a.fecha.localeCompare(b.fecha));
       return {
         id: p.id,

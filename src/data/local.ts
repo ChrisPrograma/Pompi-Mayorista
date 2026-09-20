@@ -12,7 +12,7 @@
 import { BaseLocal, hayIndexedDB, type DefinicionTabla } from './idb.ts';
 import { PARAMETROS_DEFAULT, type EstadoApp } from '../app/estado.ts';
 import { esIdReal } from '../app/limpieza.ts';
-import type { AlmacenCola, ItemCola } from './outbox.ts';
+import { idsAfectados, type AlmacenCola, type ItemCola } from './outbox.ts';
 
 const TABLAS: DefinicionTabla[] = [
   { nombre: 'productos', clave: 'id', indices: ['proveedorId'] },
@@ -176,7 +176,9 @@ export const limpiarColaDeEjemplo = async (): Promise<number> => {
 export const idsEnCola = async (): Promise<Set<string>> => {
   if (!hayIndexedDB()) return new Set();
   const items = await base.todos<ItemCola>('cola').catch(() => [] as ItemCola[]);
-  return new Set(items.map((i) => i.id));
+  // `idsAfectados` y no `i.id`: una anulación lleva id propio y protege también
+  // a la compra que anula. Ver el comentario en `outbox.ts`.
+  return new Set(items.flatMap((i) => idsAfectados(i.op)));
 };
 
 /** La cola de salida, respaldada en IndexedDB. */

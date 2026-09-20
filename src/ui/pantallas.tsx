@@ -42,6 +42,8 @@ export interface Acciones {
   verCliente: (id: Uuid) => void;
   /** Abre el detalle de una venta ya hecha, con su comprobante. */
   verVenta: (id: Uuid) => void;
+  /** Abre el detalle de un ingreso de mercadería, con la opción de anularlo. */
+  verIngreso: (id: Uuid) => void;
   nuevoProducto: () => void;
   nuevoProveedor: () => void;
   verProveedor: (id: Uuid) => void;
@@ -319,6 +321,48 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
                     {x.estado === 'cobrado' ? 'cobrado'
                       : x.estado === 'parcial' ? `pagó ${plataCorta(x.cobradoCent)}`
                       : 'quedó debiendo'}
+                  </span>
+                </span>
+                <Icono id="i-arrow" clase="ico-s ico-arrow" />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/*
+        * "Lo que ingresó hoy", al lado de lo que vendió.
+        *
+        * Va DEBAJO de las ventas y no arriba: lo que entra es plata que sale, y
+        * la pantalla de inicio tiene que abrir con lo que ganó. Pero tiene que
+        * estar, porque cargar mal un ingreso es el error más fácil de cometer
+        * —un cero de más en la cantidad— y hasta ahora no había dónde verlo el
+        * mismo día.
+        */}
+      {v.ingresosDeHoy.length > 0 && (
+        <>
+          <div className="section-h">
+            <h2>Lo que ingresó hoy</h2>
+            <span className="hint">{plata(v.ingresadoHoyCent)}</span>
+          </div>
+          <div className="stack">
+            {v.ingresosDeHoy.map((x) => (
+              <button className={`row ${x.anulada ? 'anulada' : ''}`} key={x.id}
+                onClick={() => acc.verIngreso(x.id)}>
+                <span className="thumb">
+                  <span style={{ fontFamily: 'Archivo', fontWeight: 700, fontSize: 12 }}>{x.hora}</span>
+                </span>
+                <span className="row-main">
+                  <b>{x.proveedor}</b>
+                  <span>
+                    {x.unidades} u. en {x.productos === 1 ? '1 producto' : `${x.productos} productos`}
+                  </span>
+                </span>
+                <span className="row-end">
+                  <b>{plata(x.totalCent)}</b>
+                  <span>
+                    {x.anulada ? 'anulado'
+                      : x.condicionPago === 'cuenta' ? 'se lo debés' : 'pagado'}
                   </span>
                 </span>
                 <Icono id="i-arrow" clase="ico-s ico-arrow" />

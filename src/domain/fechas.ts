@@ -115,3 +115,9 @@ export const fechaYHora = (iso: string): string => {
   const { anio, mes, dia } = leer(iso);
   return `${dia}/${mes}/${anio}, ${horaLocal(iso)}`;
 };
+
+/** "20/09" — para listas donde la fecha acompaña pero no es lo principal. */
+export const fechaCorta = (iso: string): string => {
+  const { mes, dia } = leer(iso);
+  return `${dia}/${mes}`;
+};

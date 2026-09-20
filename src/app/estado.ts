@@ -123,6 +123,10 @@ export const historialPrecios = (e: EstadoApp, productoId: Uuid): PrecioVenta[] 
 
 export const costoDe = (e: EstadoApp, productoId: Uuid): Cent | null => {
   const items = e.compras
+    // Una compra anulada no le costó nada: si era la última, el costo tiene que
+    // volver al de la anterior. Mostrar el costo de una entrada que no existió
+    // falsea la ganancia de todos los productos que entraron en ella.
+    .filter((c) => !c.anuladaEn)
     .flatMap((c) => c.items.map((i) => ({ ...i, fecha: c.fecha })))
     .filter((i) => i.productoId === productoId)
     .sort((a, b) => a.fecha.localeCompare(b.fecha));
@@ -727,6 +731,79 @@ export const entrarMercaderia = (
   }
 
   return { compras: [compra], movimientos, sugerencias };
+};
+
+/**
+ * Anular un ingreso de mercadería.
+ *
+ * Anotó una entrada que no fue: se equivocó de proveedor, puso 100 donde iban
+ * 10, o la cargó dos veces.
+ *
+ * NO BORRA NADA. Los renglones de la compra y los movimientos de stock son
+ * inmutables —la base lo hace cumplir con triggers— y eso no es un obstáculo:
+ * es la REGLA 0. Un error se corrige apilando un asiento que lo compensa, igual
+ * que en un libro contable de papel. Acá eso son tres cosas:
+ *
+ *   1. Un movimiento por renglón, con la cantidad en negativo y tipo 'ajuste'.
+ *      La entrada sigue estando y el ajuste también; lo que cambia es la suma.
+ *   2. La cabecera marcada con `anuladaEn`. Deja de sumar en la deuda con el
+ *      proveedor y deja de contar para el costo del producto.
+ *   3. Las sugerencias de precio que esa compra había disparado pasan a
+ *      descartadas: nacieron de un aumento de costo que no ocurrió, y dejarlas
+ *      pendientes sería pedirle que decida sobre un aumento inventado.
+ *
+ * LO QUE NO TOCA, A PROPÓSITO
+ *
+ * Las ventas ya hechas con esa mercadería quedan como están. Su costo se
+ * congeló en el renglón de la venta cuando se hizo, que es exactamente para lo
+ * que sirve congelarlo: lo que él ganó en esa venta no cambia porque después se
+ * corrija una carga.
+ *
+ * Y el stock puede quedar en negativo si ya vendió parte de lo que entró. Es
+ * correcto y es información: significa que vendió mercadería que el sistema no
+ * tiene registrada como recibida, y algo de las dos cargas está mal. Taparlo
+ * dejándolo en cero sería esconder el problema.
+ */
+export const anularCompra = (e: EstadoApp, compraId: Uuid, ctx: Ctx): Resultado => {
+  const compra = e.compras.find((c) => c.id === compraId);
+  if (!compra) throw new Error('Ese ingreso no existe');
+  if (compra.anuladaEn) throw new Error('Ese ingreso ya estaba anulado');
+
+  const fecha = ctx.ahora();
+
+  const movimientos: MovimientoStock[] = compra.items.map((it) => ({
+    id: ctx.nuevoId(),
+    negocioId: e.negocioId,
+    productoId: it.productoId,
+    ubicacion: 'deposito',
+    cantidad: -it.cantidad,
+    tipo: 'ajuste',
+    refTipo: 'compra',
+    refId: compraId,
+    fecha,
+    nota: 'Anulación del ingreso',
+  }));
+
+  /*
+   * Las sugerencias no guardan de qué compra salieron, así que se las reconoce
+   * por lo que sí tienen: el mismo producto, el mismo costo nuevo y la misma
+   * fecha de creación que la compra. `entrarMercaderia` las crea con la fecha
+   * exacta de la compra, así que la coincidencia es precisa y no aproximada.
+   */
+  const sugerenciasResueltas = e.sugerencias
+    .filter((s) =>
+      s.estado === 'pendiente' &&
+      s.creadaEn === compra.fecha &&
+      compra.items.some(
+        (it) => it.productoId === s.productoId && it.costoUnitarioCent === s.costoNuevoCent,
+      ))
+    .map((s) => ({ ...s, estado: 'descartada' as const, resueltaEn: fecha }));
+
+  return {
+    compras: [{ ...compra, anuladaEn: fecha }],
+    movimientos,
+    ...(sugerenciasResueltas.length ? { sugerenciasResueltas } : {}),
+  };
 };
 
 

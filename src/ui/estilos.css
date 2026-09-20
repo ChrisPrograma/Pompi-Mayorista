@@ -585,3 +585,9 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
 /* La flecha de las ventas de hoy: gris y chica, que se note que se puede tocar
    sin competir con el importe, que es lo que él mira. */
 .row .ico-arrow{color:var(--ink-3);flex:none}
+
+/* Un ingreso anulado sigue en la lista, pero apagado y con el total tachado:
+   tiene que poder revisarlo, sobre todo si se equivocó al anular. */
+.row.anulada{opacity:.62}
+.row.anulada .row-end b{text-decoration:line-through}
+.row.anulada .row-end span{color:var(--warn-ink,var(--warn));font-weight:600}

@@ -131,6 +131,15 @@ export interface Compra {
   fecha: string;
   condicionPago: 'contado' | 'cuenta';
   totalCent: Cent;
+  /**
+   * Cuándo se anuló este ingreso, o ausente si sigue valiendo.
+   *
+   * La compra NO se borra: sus renglones y sus movimientos de stock son
+   * inmutables por trigger. Anular es asentar movimientos de ajuste que
+   * compensan la entrada y dejar esta marca, que es lo que hace que la compra
+   * deje de sumar en la deuda con el proveedor y en el costo del producto.
+   */
+  anuladaEn?: string;
   items: CompraItem[];
 }
 

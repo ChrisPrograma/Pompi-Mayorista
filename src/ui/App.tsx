@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { uuidv7 } from '../lib/uuid.ts';
 import { aCentavos, pesos, type Cent } from '../domain/money.ts';
-import { fechaLarga, fechaYHora, mismoDiaLocal } from '../domain/fechas.ts';
+import { fechaCorta, fechaLarga, fechaYHora, mismoDiaLocal } from '../domain/fechas.ts';
 import type { Uuid } from '../domain/types.ts';
 import {
   activarCliente, activarProducto, activarProveedor, altaCliente, altaProducto, altaProveedor,
-  aplicar, aplicarSugerencias, cambiarPrecio, clienteParecido, cobrar,
+  anularCompra, aplicar, aplicarSugerencias, cambiarPrecio, clienteParecido, cobrar,
   descartarSugerencias, editarCliente, editarProducto, editarProveedor, entrarMercaderia,
   estadoVacio, precioDe, productoConCodigo, productoParecido, vender,
   type Ctx, type EstadoApp, type Resultado,
@@ -22,7 +22,10 @@ import {
 } from '../data/servidor.ts';
 import { salir, sesionGuardada, type Sesion } from '../data/sesion.ts';
 import { PantallaAcceso } from './ingreso.tsx';
-import { reciboDeVenta, sugerenciasPendientes, vistaDeudas, type ProductoVista } from './vistas.ts';
+import {
+  reciboDeVenta, sugerenciasPendientes, vistaDeudas, vistaIngresos, vistaProductos,
+  type ProductoVista,
+} from './vistas.ts';
 import { Alerta, BotonCompartir, Coach, Exito, Hoja, Icono, plata, type DatosExito } from './componentes.tsx';
 import { RECORRIDO } from './recorrido.ts';
 import {
@@ -78,6 +81,16 @@ export const App = () => {
   const [exito, setExito] = useState<DatosExito | null>(null);
   /** La venta cuyo detalle está abierto, o null. */
   const [fichaVenta, setFichaVenta] = useState<Uuid | null>(null);
+  /** El ingreso cuyo detalle está abierto, o null. */
+  const [fichaIngreso, setFichaIngreso] = useState<Uuid | null>(null);
+  /**
+   * El ingreso que está esperando confirmación para anularse.
+   *
+   * Un estado aparte y no un `confirm()` del navegador: el nativo no deja
+   * explicar qué va a pasar con el stock ni con la deuda, que es justamente lo
+   * único que hay que explicar antes de una acción que no se deshace.
+   */
+  const [confirmarAnular, setConfirmarAnular] = useState<Uuid | null>(null);
   const [hojaCobro, setHojaCobro] = useState<Uuid | null>(null);
   const [hojaProducto, setHojaProducto] = useState<ProductoVista | null>(null);
   const [hojaPrecios, setHojaPrecios] = useState(false);
@@ -442,6 +455,8 @@ export const App = () => {
     verCliente: (id) => setFichaCliente(id),
 
     verVenta: (id) => setFichaVenta(id),
+
+    verIngreso: (id) => setFichaIngreso(id),
 
     nuevoProducto: () => { setF({}); setErrorHoja(null); setHojaProdForm({ modo: 'alta' }); },
 
@@ -821,6 +836,59 @@ export const App = () => {
     setF({ nombre: p.nombre, zona: p.zona ?? '', rubro: p.rubro ?? '', contacto: p.contacto ?? '' });
     setFichaProv(null);
     setHojaProv({ modo: 'editar', id });
+  };
+
+  /**
+   * Anular un ingreso de mercadería.
+   *
+   * Lo pesado pasa en `anularCompra`, que es una función pura y tiene sus tests.
+   * Acá solo se despacha y se le cuenta qué pasó, con los dos números que le
+   * importan: cuántas unidades salieron del stock y cómo le quedó la deuda con
+   * ese proveedor.
+   */
+  const anularIngreso = (compraId: Uuid) => {
+    const compra = estado.compras.find((c) => c.id === compraId);
+    if (!compra) return;
+
+    const c = ctx();
+    const r = anularCompra(estado, compraId, c);
+    const unidades = compra.items.reduce((a, i) => a + i.cantidad, 0);
+    const prov = estado.proveedores.find((x) => x.id === compra.proveedorId);
+
+    // Cuánto le va a quedar debiendo a ese proveedor después de anular.
+    const deudaDespues = estado.compras
+      .filter((x) => x.proveedorId === compra.proveedorId
+        && x.condicionPago === 'cuenta'
+        && !x.anuladaEn
+        && x.id !== compraId)
+      .reduce((a, x) => a + x.totalCent, 0);
+
+    /*
+     * `uuidv7()` como id de la operación y la compra en el payload. Es la única
+     * operación que no usa el id de la fila que toca, y tiene que ser así: si la
+     * compra todavía está esperando subir, su `registrar_compra` está guardado
+     * en la cola con ESE id, y reusarlo lo pisaría — la compra nunca llegaría al
+     * servidor y la anulación fallaría porque no existe.
+     */
+    void despachar(r, [{
+      tipo: 'anular_compra', id: uuidv7(),
+      payload: { p_id: compraId, p_fecha: r.compras![0].anuladaEn },
+    }]);
+
+    setConfirmarAnular(null);
+    setFichaIngreso(null);
+    setExito({
+      titulo: 'Ingreso anulado',
+      monto: plata(compra.totalCent),
+      texto: compra.condicionPago === 'cuenta'
+        ? `Se descontó del stock y ya no figura como deuda con ${prov?.nombre ?? 'el proveedor'}.`
+        : 'Se descontó del stock. La entrada queda en el historial, marcada como anulada.',
+      deltas: compra.condicionPago === 'cuenta'
+        ? [{ etiqueta: 'Salieron del stock', valor: `${unidades} u.` },
+           { etiqueta: 'Ahora le debés', valor: plata(deudaDespues) }]
+        : [{ etiqueta: 'Salieron del stock', valor: `${unidades} u.` },
+           { etiqueta: 'Productos', valor: String(compra.items.length) }],
+    });
   };
 
   const cambiarActivoProveedor = (id: Uuid, activo: boolean) => {
@@ -1259,6 +1327,145 @@ export const App = () => {
         );
       })()}
 
+      {/* ---------------------------------------------------------------
+        * El detalle de un ingreso de mercadería, con la anulación.
+        *
+        * Anular NO borra: asienta los movimientos que compensan la entrada y
+        * marca la compra. Por eso un ingreso anulado se sigue viendo acá, con
+        * su cartel: él tiene que poder revisar qué anuló, sobre todo si se
+        * equivocó al anular.
+        * --------------------------------------------------------------- */}
+      {fichaIngreso && (() => {
+        const c = estado.compras.find((x) => x.id === fichaIngreso);
+        if (!c) return null;
+        const prov = estado.proveedores.find((p) => p.id === c.proveedorId);
+        const unidades = c.items.reduce((a, i) => a + i.cantidad, 0);
+
+        return (
+          <Hoja alCerrar={() => setFichaIngreso(null)}>
+            <h3>{prov?.nombre ?? 'Ingreso sin proveedor'}</h3>
+            {/* Anulado manda: decir "se lo debés" arriba de un cartel que
+                avisa que ya no le debe nada sería contradecirse en dos renglones. */}
+            <p className="sub">
+              {fechaYHora(c.fecha)} · {c.anuladaEn
+                ? 'Anulado'
+                : c.condicionPago === 'cuenta' ? 'Se lo debés' : 'Pagado'}
+            </p>
+
+            {c.anuladaEn && (
+              <Alerta tipo="warn" icono="i-alert" titulo="Este ingreso está anulado"
+                texto={`Se anuló el ${fechaYHora(c.anuladaEn)}. La mercadería ya se descontó del stock y no cuenta como deuda.`} />
+            )}
+
+            <div className="stack" style={{ marginTop: 12 }}>
+              {c.items.map((it) => {
+                const p = estado.productos.find((x) => x.id === it.productoId);
+                return (
+                  <div className="row" key={it.id}>
+                    <span className="row-main">
+                      <b>
+                        {p?.codigo && <span className="cod">{p.codigo}</span>}
+                        {p?.nombre ?? 'Producto'}
+                      </b>
+                      <span>{it.cantidad} × {plata(it.costoUnitarioCent)} de costo</span>
+                    </span>
+                    <span className="row-end">
+                      <b>{plata(it.costoUnitarioCent * it.cantidad)}</b>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="card" style={{ marginTop: 12 }}>
+              <div className="tot-fila">
+                <span style={{ fontWeight: 700 }}>Total del ingreso</span>
+                <b className="num">{plata(c.totalCent)}</b>
+              </div>
+              <div className="tot-fila">
+                <span>Unidades</span>
+                <b className="num">{unidades}</b>
+              </div>
+            </div>
+
+            <button className="btn block" style={{ marginTop: 12 }}
+              onClick={() => setFichaIngreso(null)}>Cerrar</button>
+
+            {!c.anuladaEn && (
+              <button className="btn ghost block" style={{ marginTop: 6, color: 'var(--bad)' }}
+                onClick={() => setConfirmarAnular(c.id)}>
+                Anular este ingreso
+              </button>
+            )}
+          </Hoja>
+        );
+      })()}
+
+      {/* La confirmación. Dice exactamente qué va a pasar, con los números. */}
+      {confirmarAnular && (() => {
+        const c = estado.compras.find((x) => x.id === confirmarAnular);
+        if (!c) return null;
+        const unidades = c.items.reduce((a, i) => a + i.cantidad, 0);
+        const prov = estado.proveedores.find((p) => p.id === c.proveedorId);
+
+        /*
+         * Cuánto stock queda después. Si alguno queda en negativo hay que
+         * decirlo: significa que ya vendió parte de esa mercadería, y anular
+         * igual es correcto, pero él tiene que saber que el número va a quedar
+         * en rojo y por qué.
+         */
+        const enRojo = c.items.filter((it) => {
+          const actual = vistaProductos(estado).find((p) => p.id === it.productoId)?.enStock ?? 0;
+          return actual - it.cantidad < 0;
+        }).length;
+
+        return (
+          <Hoja alCerrar={() => setConfirmarAnular(null)}>
+            <h3>¿Anular este ingreso?</h3>
+            <p className="sub">Esto no se puede deshacer desde la app.</p>
+
+            <div className="card" style={{ marginTop: 12 }}>
+              <div className="tot-fila">
+                <span>Salen del stock</span>
+                <b className="num">{unidades} u.</b>
+              </div>
+              {c.condicionPago === 'cuenta' ? (
+                <div className="tot-fila">
+                  <span>Dejás de deberle a {prov?.nombre ?? 'el proveedor'}</span>
+                  <b className="num">{plata(c.totalCent)}</b>
+                </div>
+              ) : (
+                <div className="tot-fila">
+                  <span>Era una compra al contado</span>
+                  <b className="num">sin deuda</b>
+                </div>
+              )}
+            </div>
+
+            <p className="sub" style={{ marginTop: 12 }}>
+              El costo de estos productos vuelve al de la compra anterior, así que
+              la ganancia que muestra la app puede cambiar. Las ventas ya hechas no
+              se tocan: su costo quedó congelado cuando las hiciste.
+            </p>
+
+            {enRojo > 0 && (
+              <Alerta tipo="warn" icono="i-alert"
+                titulo={enRojo === 1 ? 'Un producto va a quedar en negativo' : `${enRojo} productos van a quedar en negativo`}
+                texto="Es porque ya vendiste parte de esta mercadería. Anular igual es correcto: el número en rojo te está avisando que hay algo mal cargado." />
+            )}
+
+            <button className="btn accent lg block" style={{ marginTop: 14, background: 'var(--bad)' }}
+              onClick={() => anularIngreso(c.id)}>
+              Sí, anular el ingreso
+            </button>
+            <button className="btn outline block" style={{ marginTop: 8 }}
+              onClick={() => setConfirmarAnular(null)}>
+              No, dejarlo como está
+            </button>
+          </Hoja>
+        );
+      })()}
+
       {fichaCliente && (() => {
         const c = estado.clientes.find((x) => x.id === fichaCliente);
         if (!c) return null;
@@ -1459,9 +1666,13 @@ export const App = () => {
       {fichaProv && (() => {
         const p = estado.proveedores.find((x) => x.id === fichaProv);
         if (!p) return null;
+        // Sin las anuladas: una compra anulada no genera deuda.
         const debo = estado.compras
-          .filter((c) => c.proveedorId === p.id && c.condicionPago === 'cuenta')
+          .filter((c) => c.proveedorId === p.id && c.condicionPago === 'cuenta' && !c.anuladaEn)
           .reduce((a, c) => a + c.totalCent, 0);
+        // Los últimos ingresos de este proveedor, para poder entrar a anularlos.
+        const ingresos = vistaIngresos(estado, estado.compras.filter((c) => c.proveedorId === p.id))
+          .slice(0, 6);
         return (
           <Hoja alCerrar={() => setFichaProv(null)}>
             <h3>{p.nombre}</h3>
@@ -1473,6 +1684,25 @@ export const App = () => {
                 <span>contacto</span>
               </div>
             </div>
+            {ingresos.length > 0 && (
+              <>
+                <p className="eyebrow" style={{ marginTop: 14 }}>Lo último que te trajo</p>
+                <div className="stack">
+                  {ingresos.map((x) => (
+                    <button className={`row ${x.anulada ? 'anulada' : ''}`} key={x.id}
+                      onClick={() => { setFichaProv(null); setFichaIngreso(x.id); }}>
+                      <span className="row-main">
+                        <b>{fechaCorta(estado.compras.find((c) => c.id === x.id)!.fecha)}</b>
+                        <span>{x.unidades} u. · {x.anulada ? 'anulado' : x.condicionPago === 'cuenta' ? 'se lo debés' : 'pagado'}</span>
+                      </span>
+                      <span className="row-end"><b>{plata(x.totalCent)}</b></span>
+                      <Icono id="i-arrow" clase="ico-s ico-arrow" />
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
             <button className="btn lg block" style={{ marginTop: 14 }}
               onClick={() => { setFichaProv(null); irA('ingreso'); }}>
               Cargar mercadería de él

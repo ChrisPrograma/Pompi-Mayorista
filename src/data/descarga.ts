@@ -144,10 +144,18 @@ const aCompraItem = (f: Fila): CompraItem => ({
 const aCompra = (f: Fila): Compra => ({
   id: String(f.id),
   negocioId: String(f.negocio_id),
-  proveedorId: String(f.proveedor_id),
+  /*
+   * Condicional y no `String(f.proveedor_id)`. Desde la migración 008 una compra
+   * al contado puede no tener proveedor —es el caso de la carga inicial, "estas
+   * diez ya las tenía en casa"—, y ahí la columna viene en null. `String(null)`
+   * devuelve el texto "null", que después no coincide con ningún proveedor y
+   * hace que la compra se vea huérfana en vez de sin proveedor.
+   */
+  ...(f.proveedor_id ? { proveedorId: String(f.proveedor_id) } : {}),
   fecha: iso(f.fecha),
   condicionPago: String(f.condicion_pago) as Compra['condicionPago'],
   totalCent: Number(f.total_cent),
+  ...(f.anulada_en ? { anuladaEn: iso(f.anulada_en) } : {}),
   items: ((f.compra_items as Fila[] | undefined) ?? []).map(aCompraItem),
 });
 
