@@ -20,7 +20,8 @@ export default defineConfig({
         // El import va ARRIBA, no acá adentro: Vite compila este archivo a ESM,
         // donde `require` no existe. Un require() dentro del hook rompe el build
         // recién en el último paso, con 48 módulos ya transformados.
-        for (const archivo of ['icono-192.png', 'icono-512.png', '_headers']) {
+        // OJO: la misma lista está en `scripts/build.mjs`.
+        for (const archivo of ['icono-192.png', 'icono-512.png', 'icono-maskable-512.png', 'apple-touch-icon.png', 'favicon.ico', '_headers']) {
           if (!existsSync(archivo)) continue;   // falta uno: se avisa, no se rompe
           this.emitFile({
             type: 'asset',

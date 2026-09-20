@@ -6,9 +6,21 @@
   <meta name="theme-color" content="#075057">
   <meta name="description" content="Gestión de venta mayorista de accesorios para mascotas">
   <link rel="manifest" href="manifest.webmanifest">
-  <!-- Sin esto el navegador pide /favicon.ico en cada carga y se come un 404. -->
-  <link rel="icon" href="icono-192.png" type="image/png">
-  <link rel="apple-touch-icon" href="icono-192.png">
+  <!--
+    Los tres que pide un navegador, en orden de preferencia:
+
+    - favicon.ico lleva 16, 32 y 48 px adentro y está RECORTADO al huesito: a
+      16 px el texto "pompi mascotas" no se lee y queda una mancha. Además el
+      navegador lo pide solo aunque no esté declarado, así que sin este archivo
+      se come un 404 en cada carga.
+    - icono-192.png es el icono completo, para pestañas en pantallas densas.
+    - apple-touch-icon.png lo usa iOS al agregar la app a la pantalla de inicio.
+      Va a sangre y sin transparencia: iOS le pone su propio redondeo, y si el
+      archivo ya viniera redondeado se verían esquinas blancas adentro.
+  -->
+  <link rel="icon" href="favicon.ico" sizes="48x48">
+  <link rel="icon" href="icono-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Asap:wght@400;500;600;700&display=swap">

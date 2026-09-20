@@ -36,6 +36,23 @@ declare module 'react' {
     preventDefault(): void;
   }
 
+  /*
+   * El evento de un clic, con lo único que el proyecto mira de él: si viene con
+   * una tecla apretada (ctrl/⌘/shift/alt) o con otro botón del mouse, porque eso
+   * significa "abrir en otra pestaña" y no hay que cancelarlo.
+   */
+  export interface MouseEvent<T = Element> {
+    target: T;
+    currentTarget: T;
+    preventDefault(): void;
+    stopPropagation(): void;
+    readonly metaKey: boolean;
+    readonly ctrlKey: boolean;
+    readonly shiftKey: boolean;
+    readonly altKey: boolean;
+    readonly button: number;
+  }
+
   export interface FormEvent<T = Element> {
     target: T;
     currentTarget: T;

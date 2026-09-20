@@ -28,5 +28,14 @@
 /index-*.css
   Cache-Control: public, max-age=31536000, immutable
 
+# Los iconos de la marca NO llevan hash en el nombre: si cambia el logo, el
+# archivo se llama igual. Con un caché largo el cliente seguiría viendo el
+# viejo durante semanas, así que se revalidan todos los días.
 /icono-*.png
-  Cache-Control: public, max-age=2592000
+  Cache-Control: public, max-age=86400, must-revalidate
+
+/apple-touch-icon.png
+  Cache-Control: public, max-age=86400, must-revalidate
+
+/favicon.ico
+  Cache-Control: public, max-age=86400, must-revalidate

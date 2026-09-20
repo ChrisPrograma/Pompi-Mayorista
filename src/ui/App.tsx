@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import {
+  useCallback, useEffect, useMemo, useRef, useState,
+  type ChangeEvent, type MouseEvent,
+} from 'react';
 import { uuidv7 } from '../lib/uuid.ts';
 import { aCentavos, pesos, type Cent } from '../domain/money.ts';
 import { fechaCorta, fechaLarga, fechaYHora, mismoDiaLocal } from '../domain/fechas.ts';
@@ -1023,15 +1026,35 @@ export const App = () => {
     <div className={`app ${paso !== null ? 'en-recorrido' : ''}`}>
       <header className="hud">
         <div className="hud-top">
-          <div className="brand">
-            <div className="brand-mark"><Icono id="i-paw" /></div>
-            <div>
-              <div className="brand-name">{NEGOCIO}</div>
-              <div className="brand-sub">
-                {fechaLarga(hoy)}
-              </div>
-            </div>
-          </div>
+          {/*
+            * Un `<a href="/">` de verdad y no un botón.
+            *
+            * El clic común no navega: lo cancela y cambia de pantalla sin
+            * recargar, que es lo que tiene que pasar en una app que funciona sin
+            * señal — una recarga de verdad la dejaría en blanco hasta que el
+            * service worker responda.
+            *
+            * Pero el `href` está y apunta a la raíz, y eso es lo que hace que
+            * funcionen las cosas que un botón no puede: el clic derecho ofrece
+            * "copiar dirección", se puede arrastrar el ícono al escritorio para
+            * dejar un acceso directo, y ctrl+clic abre la app en otra pestaña.
+            */}
+          <a className="brand" href="/"
+            onClick={(ev: MouseEvent<HTMLAnchorElement>) => {
+              // Ctrl/⌘/shift/alt-clic y el botón del medio son "abrir en otra
+              // pestaña". Si los cancelara, rompería lo que vine a habilitar.
+              if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button !== 0) return;
+              ev.preventDefault();
+              irA('hoy');
+            }}>
+            <span className="brand-mark">
+              <img src="icono-192.png" alt="" width={34} height={34} />
+            </span>
+            <span>
+              <span className="brand-name">{NEGOCIO}</span>
+              <span className="brand-sub">{fechaLarga(hoy)}</span>
+            </span>
+          </a>
           <div className="hud-acciones">
             {pendientes.length > 0 && (
               <button className="hud-btn" aria-label="Precios para revisar" onClick={() => setHojaPrecios(true)}>
