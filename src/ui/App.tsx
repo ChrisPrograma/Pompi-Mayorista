@@ -27,10 +27,14 @@ import {
 import { salir, sesionGuardada, type Sesion } from '../data/sesion.ts';
 import { PantallaAcceso } from './ingreso.tsx';
 import {
-  reciboDeVenta, sugerenciasPendientes, vistaDeudas, vistaIngresos, vistaProductos,
+  caballitoDeBatalla, productosDelProveedor, reciboDeVenta, sugerenciasPendientes,
+  vistaDeudas, vistaIngresos, vistaProductos,
   type ProductoVista,
 } from './vistas.ts';
-import { Alerta, BotonCompartir, Coach, Exito, Hoja, Icono, plata, type DatosExito } from './componentes.tsx';
+import {
+  Alerta, BotonCompartir, Coach, Exito, Hoja, Icono, claseCategoria, plata,
+  type DatosExito,
+} from './componentes.tsx';
 import { RECORRIDO } from './recorrido.ts';
 import {
   PantallaClientes, PantallaCosas, PantallaDeudas, PantallaHoy,
@@ -1642,6 +1646,7 @@ export const App = () => {
         if (!c) return null;
         const d = deudas.lista.find((x) => x.clienteId === c.id);
         const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+        const caballito = caballitoDeBatalla(estado, c.id);
         return (
           <Hoja alCerrar={() => setFichaCliente(null)}>
             <h3>{c.nombre}</h3>
@@ -1659,6 +1664,34 @@ export const App = () => {
                 <b style={{ fontSize: c.contacto ? 18 : undefined }}>{c.contacto ?? '—'}</b>
                 <span>contacto</span>
               </div>
+            </div>
+
+            {/*
+              * El caballito de batalla: lo que ese comercio siempre se lleva.
+              *
+              * Se cuenta por unidades y no por plata — es lo que más se lleva,
+              * no lo más caro—, y las ventas anuladas no entran. Sirve parado en
+              * la vereda: qué ofrecerle primero, y darse cuenta de que hoy no se
+              * lo está llevando.
+              */}
+            <div className="caballito">
+              <span className="caballito-ico" aria-hidden="true">⭐</span>
+              {caballito ? (
+                <span>
+                  <b>Caballito de batalla</b>
+                  <span>
+                    {caballito.codigo && <span className="cod">{caballito.codigo}</span>}
+                    {caballito.nombre}
+                    {' · '}
+                    {caballito.unidades === 1 ? '1 u. comprada' : `${caballito.unidades} u. compradas`}
+                  </span>
+                </span>
+              ) : (
+                <span>
+                  <b>Sin producto destacado aún</b>
+                  <span>Cuando le vendas, acá va a salir lo que más se lleva.</span>
+                </span>
+              )}
             </div>
 
             {d && (
@@ -1844,6 +1877,7 @@ export const App = () => {
         // Los últimos ingresos de este proveedor, para poder entrar a anularlos.
         const ingresos = vistaIngresos(estado, estado.compras.filter((c) => c.proveedorId === p.id))
           .slice(0, 6);
+        const productos = productosDelProveedor(estado, p.id);
         return (
           <Hoja alCerrar={() => setFichaProv(null)}>
             <h3>{p.nombre}</h3>
@@ -1855,6 +1889,38 @@ export const App = () => {
                 <span>contacto</span>
               </div>
             </div>
+            {/*
+              * Lo que le compra, con el código de su planilla y el costo de hoy.
+              * El costo sale del mismo lugar del que sale la ganancia, así que
+              * si anuló un ingreso, acá se ve el costo que volvió a quedar.
+              */}
+            {productos.length > 0 && (
+              <>
+                <p className="eyebrow" style={{ marginTop: 14 }}>
+                  Lo que le comprás · {productos.length === 1 ? '1 producto' : `${productos.length} productos`}
+                </p>
+                <div className="stack">
+                  {productos.map((x) => (
+                    <button className="row" key={x.id}
+                      onClick={() => { setFichaProv(null); acc.verProducto(x); }}>
+                      <span className={`thumb ${claseCategoria(x.categoria)}`}><Icono id="i-box" /></span>
+                      <span className="row-main">
+                        <b>
+                          {x.codigo && <span className="cod">{x.codigo}</span>}
+                          {x.nombre}
+                        </b>
+                        <span>{x.enStock} en stock</span>
+                      </span>
+                      <span className="row-end">
+                        <b>{x.costoCent !== null ? plata(x.costoCent) : '—'}</b>
+                        <span>te cuesta</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
             {ingresos.length > 0 && (
               <>
                 <p className="eyebrow" style={{ marginTop: 14 }}>Lo último que te trajo</p>

@@ -1,5 +1,6 @@
 import { useMemo, useState, type ChangeEvent } from 'react';
 import { aCentavos, pesos, type Cent } from '../domain/money.ts';
+import { fechaCorta, nombreDelMes } from '../domain/fechas.ts';
 import type { Uuid } from '../domain/types.ts';
 import type { EstadoApp } from '../app/estado.ts';
 import {
@@ -310,8 +311,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
               * "mandámelo de nuevo" es lo que más le piden.
               */}
             {v.ventasDeHoy.map((x) => (
-              <button className={`row ${x.anulada ? 'anulada' : ''}`} key={x.id}
-                onClick={() => acc.verVenta(x.id)}>
+              <button className="row" key={x.id} onClick={() => acc.verVenta(x.id)}>
                 <span className="thumb">
                   <span style={{ fontFamily: 'Archivo', fontWeight: 700, fontSize: 12 }}>{x.hora}</span>
                 </span>
@@ -319,8 +319,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
                 <span className="row-end">
                   <b>{plata(x.totalCent)}</b>
                   <span>
-                    {x.estado === 'anulada' ? 'anulada'
-                      : x.estado === 'cobrado' ? 'cobrado'
+                    {x.estado === 'cobrado' ? 'cobrado'
                       : x.estado === 'parcial' ? `pagó ${plataCorta(x.cobradoCent)}`
                       : 'quedó debiendo'}
                   </span>
@@ -366,6 +365,49 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
                     {x.anulada ? 'anulado'
                       : x.condicionPago === 'cuenta' ? 'se lo debés' : 'pagado'}
                   </span>
+                </span>
+                <Icono id="i-arrow" clase="ico-s ico-arrow" />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/*
+        * Lo que anuló este mes.
+        *
+        * Bloque aparte y último de todo, a propósito. Una anulación no es
+        * actividad del día —puede ser la corrección de algo de hace dos
+        * semanas—, así que mezclarla arriba ensuciaría los números que él mira
+        * primero. Pero tampoco puede desaparecer: si se equivocó al anular,
+        * este es el único lugar donde lo va a ver sin ir a buscarlo.
+        *
+        * Se limpia solo el 1° del mes siguiente. No se borra nada: la venta
+        * anulada sigue entera en su ficha y en la base.
+        */}
+      {v.anuladasDelMes.length > 0 && (
+        <>
+          <div className="section-h">
+            <h2>Anulado en {nombreDelMes(hoy)}</h2>
+            <span className="hint">{v.anuladasDelMes.length}</span>
+          </div>
+          <div className="stack">
+            {v.anuladasDelMes.map((x) => (
+              <button className="row anulada" key={x.id}
+                onClick={() => (x.tipo === 'venta' ? acc.verVenta(x.id) : acc.verIngreso(x.id))}>
+                <span className="thumb">
+                  <Icono id={x.tipo === 'venta' ? 'i-cart' : 'i-inbox'} />
+                </span>
+                <span className="row-main">
+                  <b>{x.conQuien}</b>
+                  <span>
+                    {x.tipo === 'venta' ? 'Venta' : 'Ingreso'} del {fechaCorta(x.fecha)}
+                    {' · '}anulado el {fechaCorta(x.anuladaEn)}
+                  </span>
+                </span>
+                <span className="row-end">
+                  <b>{plata(x.totalCent)}</b>
+                  <span>anulado</span>
                 </span>
                 <Icono id="i-arrow" clase="ico-s ico-arrow" />
               </button>

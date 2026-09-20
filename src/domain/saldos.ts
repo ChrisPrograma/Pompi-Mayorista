@@ -99,3 +99,47 @@ export const totalEnLaCalle = (
     0,
   );
 };
+
+
+/**
+ * El producto que más unidades le compró un comercio, en toda su historia.
+ *
+ * Él lo llama "el caballito de batalla": lo que ese comercio siempre le lleva.
+ * Sirve para dos cosas muy concretas, y las dos pasan parado en la vereda —
+ * saber qué ofrecerle primero, y darse cuenta de que hoy no se lo está llevando.
+ *
+ * Las ventas anuladas no cuentan. Una venta que se dio de baja no es una compra
+ * que ese comercio haya hecho, y si contara, un error de carga anulado podría
+ * dejarle un caballito de batalla que nunca compró.
+ *
+ * Se cuenta por UNIDADES y no por plata: el caballito es lo que más se lleva, no
+ * lo más caro. Un producto que compra de a cincuenta le importa más que uno caro
+ * que se llevó una vez.
+ *
+ * Los empates se resuelven por id, que es arbitrario pero estable: sin un
+ * criterio fijo, la ficha mostraría un producto distinto en cada dibujado.
+ */
+export const productoMasComprado = (
+  clienteId: Uuid,
+  ventas: Venta[],
+): { productoId: Uuid; unidades: number } | null => {
+  const porProducto = new Map<Uuid, number>();
+
+  for (const v of ventas) {
+    if (v.anuladaEn || v.clienteId !== clienteId) continue;
+    for (const it of v.items) {
+      porProducto.set(it.productoId, (porProducto.get(it.productoId) ?? 0) + it.cantidad);
+    }
+  }
+
+  let mejor: { productoId: Uuid; unidades: number } | null = null;
+  for (const [productoId, unidades] of porProducto) {
+    if (unidades <= 0) continue;
+    if (!mejor
+      || unidades > mejor.unidades
+      || (unidades === mejor.unidades && productoId < mejor.productoId)) {
+      mejor = { productoId, unidades };
+    }
+  }
+  return mejor;
+};

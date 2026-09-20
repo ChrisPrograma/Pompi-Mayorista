@@ -602,3 +602,29 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .row.anulada{opacity:.62}
 .row.anulada .row-end b{text-decoration:line-through}
 .row.anulada .row-end span{color:var(--warn-ink,var(--warn));font-weight:600}
+
+/* El caballito de batalla, en la ficha del comercio. Es un destacado, no una
+   fila más: lleva su fondo y la estrella afuera del texto. */
+.caballito{
+  display:flex;gap:11px;align-items:flex-start;margin-top:12px;
+  padding:12px 13px;border-radius:var(--r-m);
+  background:var(--brand-soft);border:1px solid color-mix(in srgb,var(--brand) 22%,transparent);
+}
+.caballito-ico{font-size:20px;line-height:1.2;flex:none}
+.caballito b{display:block;font-size:15.5px;font-weight:700}
+.caballito>span>span{display:block;font-size:14.5px;color:var(--ink-2);line-height:1.35;margin-top:2px}
+/*
+ * El código, adentro del destacado.
+ *
+ * La regla de la lista es `.row-main .cod` y acá no hay ningún `.row-main`, así
+ * que el código salía sin nada: pegado al nombre y sin fondo ("1179Pretal").
+ * Y el fondo de la lista tampoco serviría — es el mismo `--brand-soft` que ya
+ * tiene el destacado, o sea, invisible. Va sobre la superficie blanca.
+ */
+.caballito .cod{
+  display:inline-block;
+  font-family:'Archivo',monospace;font-variant-numeric:tabular-nums;
+  font-size:.86em;font-weight:700;color:var(--brand-ink);
+  background:var(--surface);border-radius:6px;padding:0 6px;margin-right:6px;
+  vertical-align:baseline;
+}

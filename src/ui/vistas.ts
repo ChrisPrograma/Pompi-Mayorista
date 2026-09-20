@@ -10,8 +10,12 @@
 
 import type { Cent } from '../domain/money.ts';
 import { gananciaDelPeriodo } from '../domain/precios.ts';
-import { clasificar, diasEntre, saldoCliente, type Antiguedad } from '../domain/saldos.ts';
-import { diaDeSemanaLocal, diaLocal, diaLocalDesplazado, horaLocal, mismoDiaLocal } from '../domain/fechas.ts';
+import {
+  clasificar, diasEntre, productoMasComprado, saldoCliente, type Antiguedad,
+} from '../domain/saldos.ts';
+import {
+  diaDeSemanaLocal, diaLocal, diaLocalDesplazado, horaLocal, mismoDiaLocal, mismoMesLocal,
+} from '../domain/fechas.ts';
 import { calcularStock } from '../domain/stock.ts';
 import type { Compra, Uuid, Venta } from '../domain/types.ts';
 import type { DatosRecibo } from './recibo.ts';
@@ -26,10 +30,10 @@ import { costoDe, historialPrecios, precioDe, type EstadoApp } from '../app/esta
 const mismoDia = mismoDiaLocal;
 
 /**
- * Una venta anulada no cuenta para ningún número.
+ * Una venta anulada no cuenta para ningún número, y tampoco aparece entre las
+ * del día: tiene su propio bloque, `anuladasDelMes`.
  *
- * Sí aparece en las listas, marcada — él tiene que poder ver qué anuló. Pero no
- * suma en la caja del día, ni en la ganancia, ni en la deuda del comercio, ni
+ * No suma en la caja del día, ni en la ganancia, ni en la deuda del comercio, ni
  * cuenta como "hoy hiciste una venta". La deuda y la ganancia están protegidas
  * más adentro, en `saldoCliente` y `gananciaDelPeriodo`; acá se cuidan los
  * números que se arman en esta capa.
@@ -62,23 +66,48 @@ export interface VistaHoy {
     hora: string;
     totalCent: Cent;
     cobradoCent: Cent;
-    anulada: boolean;
     /**
-     * Cuatro estados. Eran dos —cobrado o debiendo— hasta que el pago parcial
-     * agregó el tercero y la anulación el cuarto. "Anulada" gana sobre todos:
-     * una venta anulada no está cobrada ni debida, no está.
+     * Tres estados. Eran dos —cobrado o debiendo— hasta que el pago parcial
+     * agregó el tercero. No hay un cuarto para "anulada": las anuladas no
+     * entran en esta lista, tienen su propio bloque.
      */
-    estado: 'cobrado' | 'parcial' | 'debe' | 'anulada';
+    estado: 'cobrado' | 'parcial' | 'debe';
     items: number;
   }[];
-  /** Las compras del día. Las anuladas siguen apareciendo, marcadas. */
+  /** Las compras del día. */
   ingresosDeHoy: IngresoVista[];
   ingresadoHoyCent: Cent;
+  /**
+   * Lo anulado en el MES calendario en curso, ventas e ingresos juntos.
+   *
+   * Va en su propio bloque y no mezclado con lo del día, por dos motivos. Uno:
+   * una anulación no es actividad del día — es la corrección de algo que puede
+   * ser de hace dos semanas. Dos: mezclada, ensucia el número de arriba, y ese
+   * número es lo primero que él mira.
+   *
+   * Se limpia solo al cambiar de mes. El 1° de octubre desaparecen las de
+   * septiembre, sin que nadie toque nada y sin que se borre un solo dato: la
+   * venta anulada sigue entera en su ficha y en la base.
+   */
+  anuladasDelMes: AnulacionVista[];
   /**
    * El día en dos pasos. Era en tres: el tercero era dejar el auto cargado, y se
    * fue junto con el auto.
    */
   misiones: { venta: boolean; cobro: boolean };
+}
+
+export interface AnulacionVista {
+  id: Uuid;
+  /** Qué se anuló: una venta a un comercio, o un ingreso de un proveedor. */
+  tipo: 'venta' | 'ingreso';
+  /** El comercio o el proveedor, según el tipo. */
+  conQuien: string;
+  totalCent: Cent;
+  /** Cuándo pasó lo que se anuló. */
+  fecha: string;
+  /** Cuándo se anuló. Es la fecha por la que se ordena y se filtra el bloque. */
+  anuladaEn: string;
 }
 
 export interface IngresoVista {
@@ -118,14 +147,50 @@ export const vistaIngresos = (e: EstadoApp, compras: Compra[]): IngresoVista[] =
       anulada: Boolean(c.anuladaEn),
     }));
 
+/**
+ * Lo anulado en el mes calendario en curso.
+ *
+ * Se filtra por la fecha de ANULACIÓN, no por la de la venta o la compra. Una
+ * venta del 3 de septiembre anulada el 18 aparece acá todo septiembre, porque lo
+ * que él necesita revisar es la corrección, no el hecho original.
+ *
+ * De más reciente a más vieja: lo último que anuló es lo que más probablemente
+ * quiera mirar, sobre todo si se equivocó al anular.
+ */
+export const anulacionesDelMes = (e: EstadoApp, hoyIso: string): AnulacionVista[] => {
+  const ventas: AnulacionVista[] = e.ventas
+    .filter((v) => v.anuladaEn && mismoMesLocal(v.anuladaEn, hoyIso))
+    .map((v) => ({
+      id: v.id,
+      tipo: 'venta' as const,
+      conQuien: e.clientes.find((c) => c.id === v.clienteId)?.nombre ?? '—',
+      totalCent: v.totalCent,
+      fecha: v.fecha,
+      anuladaEn: v.anuladaEn!,
+    }));
+
+  const ingresos: AnulacionVista[] = e.compras
+    .filter((c) => c.anuladaEn && mismoMesLocal(c.anuladaEn, hoyIso))
+    .map((c) => ({
+      id: c.id,
+      tipo: 'ingreso' as const,
+      conQuien: c.proveedorId
+        ? e.proveedores.find((p) => p.id === c.proveedorId)?.nombre ?? '—'
+        : 'Sin proveedor',
+      totalCent: c.totalCent,
+      fecha: c.fecha,
+      anuladaEn: c.anuladaEn!,
+    }));
+
+  return [...ventas, ...ingresos].sort((a, b) => b.anuladaEn.localeCompare(a.anuladaEn));
+};
+
 export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
   const deudas = vistaDeudas(e, hoyIso);
   const diaSemana = diaDeSemanaLocal(hoyIso);
 
-  // Todas las del día, anuladas incluidas: la lista las muestra.
-  const ventasHoy = e.ventas.filter((v) => mismoDia(v.fecha, hoyIso));
-  // Y las que de verdad cuentan, para los números.
-  const valenHoy = ventasHoy.filter(cuenta);
+  // Las del día que valen. Las anuladas salen por `anuladasDelMes`.
+  const valenHoy = e.ventas.filter((v) => cuenta(v) && mismoDia(v.fecha, hoyIso));
   const pagosHoy = e.pagos.filter((p) => mismoDia(p.fecha, hoyIso));
   const comprasHoy = e.compras.filter((c) => mismoDia(c.fecha, hoyIso));
 
@@ -153,7 +218,7 @@ export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
     enLaCalleCent: deudas.totalCent,
     alertaDeuda: vencidas[0] ?? null,
     ruta,
-    ventasDeHoy: ventasHoy
+    ventasDeHoy: valenHoy
       .slice()
       .sort((a, b) => b.fecha.localeCompare(a.fecha))
       .map((v) => ({
@@ -162,14 +227,13 @@ export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
         hora: horaLocal(v.fecha),
         totalCent: v.totalCent,
         cobradoCent: v.cobradoCent,
-        anulada: Boolean(v.anuladaEn),
-        estado: v.anuladaEn ? 'anulada' as const
-          : v.cobradoCent >= v.totalCent ? 'cobrado' as const
+        estado: v.cobradoCent >= v.totalCent ? 'cobrado' as const
           : v.cobradoCent > 0 ? 'parcial' as const
           : 'debe' as const,
         items: v.items.reduce((a, i) => a + i.cantidad, 0),
       })),
-    ingresosDeHoy: vistaIngresos(e, comprasHoy),
+    ingresosDeHoy: vistaIngresos(e, comprasHoy.filter((c) => !c.anuladaEn)),
+    anuladasDelMes: anulacionesDelMes(e, hoyIso),
     // Las anuladas no suman: el total del día es lo que de verdad entró.
     ingresadoHoyCent: comprasHoy
       .filter((c) => !c.anuladaEn)
@@ -445,6 +509,54 @@ export const reciboDeVenta = (e: EstadoApp, venta: Venta, negocio: string): Dato
   pagadoCent: venta.cobradoCent,
   saldoCent: Math.max(0, venta.totalCent - venta.cobradoCent),
 });
+
+export interface CaballitoVista {
+  productoId: Uuid;
+  codigo?: string;
+  nombre: string;
+  unidades: number;
+}
+
+/**
+ * El caballito de batalla de un comercio, listo para mostrar.
+ *
+ * El cálculo vive en el dominio (`productoMasComprado`); acá solo se le pega el
+ * nombre y el código, que salen del catálogo de AHORA. Si le corrigió el nombre
+ * al producto, la ficha tiene que decir el nombre corregido.
+ *
+ * Devuelve null si ese comercio todavía no tiene ninguna venta que valga.
+ */
+export const caballitoDeBatalla = (e: EstadoApp, clienteId: Uuid): CaballitoVista | null => {
+  const top = productoMasComprado(clienteId, e.ventas);
+  if (!top) return null;
+  const p = e.productos.find((x) => x.id === top.productoId);
+  return {
+    productoId: top.productoId,
+    codigo: p?.codigo,
+    nombre: p?.nombre ?? 'Producto',
+    unidades: top.unidades,
+  };
+};
+
+/**
+ * Los productos que le compra a un proveedor, con su costo de hoy.
+ *
+ * El costo sale de `costoDe`, que es el de la última compra NO anulada — el
+ * mismo número con el que la app calcula la ganancia. Así, si anuló un ingreso,
+ * esta lista muestra el costo que volvió a quedar vigente y no uno que ya no
+ * existe.
+ *
+ * Ordenados por código cuando lo tienen, que es como él los busca en su planilla.
+ */
+export const productosDelProveedor = (e: EstadoApp, proveedorId: Uuid): ProductoVista[] =>
+  vistaProductos(e)
+    .filter((p) => e.productos.find((x) => x.id === p.id)?.proveedorId === proveedorId)
+    .sort((a, b) => {
+      if (a.codigo && b.codigo) return Number(a.codigo) - Number(b.codigo);
+      if (a.codigo) return -1;
+      if (b.codigo) return 1;
+      return a.nombre.localeCompare(b.nombre, 'es');
+    });
 
 /** Las sugerencias de precio que esperan una decisión. */
 export const sugerenciasPendientes = (e: EstadoApp) =>

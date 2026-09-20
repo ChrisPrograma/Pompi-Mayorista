@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   diaLocal, diasCalendario, diaDeSemanaLocal, diaLocalDesplazado,
-  fechaYHora, horaLocal, mismoDiaLocal,
+  fechaYHora, horaLocal, mesLocal, mismoDiaLocal, mismoMesLocal,
 } from '../fechas.ts';
 
 describe('el día de acá, no el de UTC', () => {
@@ -82,5 +82,37 @@ describe('la semana del gráfico', () => {
   it('el día de la semana es el de acá', () => {
     // Sábado 19 a las 23:00 de acá. En UTC ya es domingo.
     expect(diaDeSemanaLocal('2026-09-20T02:00:00.000Z')).toBe(6);
+  });
+});
+
+
+describe('el mes calendario', () => {
+  /*
+   * Lo usa el bloque de anulaciones del inicio: lo anulado se queda a la vista
+   * hasta que termina el mes y después se va solo. Los bordes son los dos
+   * cambios de mes, y hay que mirarlos en hora de acá: una anulación de las
+   * 22:00 del 30 de septiembre es de septiembre, aunque en UTC ya sea octubre.
+   */
+  it('el 30 a la noche todavía es del mismo mes', () => {
+    const treintaALas22 = '2026-10-01T01:00:00.000Z'; // 22:00 del 30/09 acá
+    expect(mesLocal(treintaALas22)).toBe('2026-09');
+    expect(mismoMesLocal(treintaALas22, '2026-09-15T14:00:00.000Z')).toBe(true);
+  });
+
+  it('el 1° a la madrugada ya es del mes siguiente', () => {
+    const unoALas1 = '2026-10-01T04:00:00.000Z'; // 01:00 del 01/10 acá
+    expect(mesLocal(unoALas1)).toBe('2026-10');
+    expect(mismoMesLocal(unoALas1, '2026-09-30T20:00:00.000Z')).toBe(false);
+  });
+
+  it('el primero y el último día del mes son el mismo mes', () => {
+    // 1 de septiembre 00:30 y 30 de septiembre 23:30, los dos en hora de acá.
+    expect(mismoMesLocal('2026-09-01T03:30:00.000Z', '2026-10-01T02:30:00.000Z')).toBe(true);
+  });
+
+  it('el mismo día de meses distintos NO es el mismo mes', () => {
+    expect(mismoMesLocal('2026-09-15T14:00:00.000Z', '2026-10-15T14:00:00.000Z')).toBe(false);
+    // Y tampoco el mismo mes de años distintos.
+    expect(mismoMesLocal('2026-09-15T14:00:00.000Z', '2025-09-15T14:00:00.000Z')).toBe(false);
   });
 });

@@ -121,3 +121,20 @@ export const fechaCorta = (iso: string): string => {
   const { mes, dia } = leer(iso);
   return `${dia}/${mes}`;
 };
+
+/** El mes calendario de acá, como `2026-09`. Ordena y compara como texto. */
+export const mesLocal = (iso: string): string => diaLocal(iso).slice(0, 7);
+
+/**
+ * ¿Los dos instantes caen en el mismo mes calendario de acá?
+ *
+ * Lo usa el bloque de anulaciones del inicio: una venta anulada se queda a la
+ * vista hasta que termine el mes y después se va sola. Mes calendario y no
+ * "últimos 30 días" porque es como él cierra: del 1 al 30, no en una ventana
+ * móvil que nunca termina de cerrar.
+ */
+export const mismoMesLocal = (a: string, b: string): boolean => mesLocal(a) === mesLocal(b);
+
+/** "septiembre" — el nombre del mes de ese instante, para encabezados. */
+export const nombreDelMes = (iso: string): string =>
+  new Date(iso).toLocaleDateString('es-AR', { timeZone: ZONA, month: 'long' });
