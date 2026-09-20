@@ -29,7 +29,13 @@ export const saldoCliente = (
   hoyIso: string,
 ): SaldoCliente => {
   const impagas = ventas
-    .filter((v) => v.clienteId === clienteId && v.totalCent > v.cobradoCent)
+    /*
+     * `!v.anuladaEn` va acá, en el dominio, y no en cada pantalla que muestre una
+     * deuda. Es el único lugar por donde pasa el cálculo de lo que le deben, así
+     * que protegido acá no hay forma de que una pantalla nueva se olvide y le
+     * muestre una deuda de una venta que él anuló.
+     */
+    .filter((v) => !v.anuladaEn && v.clienteId === clienteId && v.totalCent > v.cobradoCent)
     .map((v) => ({ fecha: v.fecha, pendiente: v.totalCent - v.cobradoCent }))
     .sort((a, b) => a.fecha.localeCompare(b.fecha));
 

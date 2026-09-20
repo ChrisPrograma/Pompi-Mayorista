@@ -162,6 +162,16 @@ export interface Venta {
   totalCent: Cent;
   cobradoCent: Cent;
   formaPago: FormaPago;
+  /**
+   * Cuándo se anuló esta venta, o ausente si sigue valiendo.
+   *
+   * Igual que en las compras: la venta NO se borra. Sus renglones y sus
+   * movimientos de stock son inmutables por trigger. Anular es asentar los
+   * movimientos que devuelven la mercadería y dejar esta marca, que es lo que
+   * hace que la venta deje de contar en la caja del día, en la deuda del
+   * comercio y en la ganancia.
+   */
+  anuladaEn?: string;
   items: VentaItem[];
 }
 

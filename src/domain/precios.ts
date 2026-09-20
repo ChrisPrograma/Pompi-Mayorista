@@ -195,7 +195,9 @@ export const gananciaDeVenta = (venta: Venta): Ganancia => {
 };
 
 export const gananciaDelPeriodo = (ventas: Venta[]): Ganancia => {
-  const g = ventas.map(gananciaDeVenta);
+  // Igual que en `saldoCliente`: el filtro va en el dominio y no en la pantalla.
+  // Una venta anulada no vendió ni costó nada, así que no entra en la cuenta.
+  const g = ventas.filter((v) => !v.anuladaEn).map(gananciaDeVenta);
   const ventaCent = g.reduce((a, x) => a + x.ventaCent, 0);
   const costoCent = g.reduce((a, x) => a + x.costoCent, 0);
   return {

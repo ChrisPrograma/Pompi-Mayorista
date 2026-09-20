@@ -655,6 +655,53 @@ export const vender = (
 };
 
 /**
+ * Anular una venta.
+ *
+ * La contracara de `anularCompra`, con la misma mecánica y más consecuencias:
+ * una venta toca el stock, la caja del día y la cuenta corriente del comercio.
+ *
+ * NO BORRA NADA, por el mismo motivo de siempre: los renglones y los movimientos
+ * son inmutables. Son dos cosas:
+ *
+ *   1. Un movimiento por renglón, en POSITIVO. La mercadería vuelve al stock.
+ *      Espejo exacto de la anulación de compra, donde iban en negativo.
+ *   2. La cabecera marcada. Desde ahí la venta deja de sumar en "Cobré hoy", en
+ *      "Me deben" y en la ganancia del mes.
+ *
+ * LO QUE NO TOCA
+ *
+ * Los pagos que el comercio haya hecho por separado (`pagos`) NO se borran: son
+ * plata que entró de verdad y tienen su propio asiento. Si había pagado esta
+ * venta y después se anula, ese pago queda a cuenta de lo que deba, que es lo
+ * correcto — la plata está en la caja, no se puede hacer de cuenta que no.
+ *
+ * Y el costo congelado en cada renglón se queda donde está: es histórico, dice
+ * a cuánto le había costado esa mercadería en ese momento.
+ */
+export const anularVenta = (e: EstadoApp, ventaId: Uuid, ctx: Ctx): Resultado => {
+  const venta = e.ventas.find((v) => v.id === ventaId);
+  if (!venta) throw new Error('Esa venta no existe');
+  if (venta.anuladaEn) throw new Error('Esa venta ya estaba anulada');
+
+  const fecha = ctx.ahora();
+
+  const movimientos: MovimientoStock[] = venta.items.map((it) => ({
+    id: ctx.nuevoId(),
+    negocioId: e.negocioId,
+    productoId: it.productoId,
+    ubicacion: 'deposito',
+    cantidad: it.cantidad,
+    tipo: 'ajuste',
+    refTipo: 'venta',
+    refId: ventaId,
+    fecha,
+    nota: 'Anulación de la venta',
+  }));
+
+  return { ventas: [{ ...venta, anuladaEn: fecha }], movimientos };
+};
+
+/**
  * Entrar mercadería. Sube el stock del depósito y, si algún costo subió,
  * deja una SUGERENCIA pendiente. Nunca cambia un precio por su cuenta.
  */

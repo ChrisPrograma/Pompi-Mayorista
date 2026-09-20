@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { uuidv7 } from '../lib/uuid.ts';
 import { aCentavos, pesos, type Cent } from '../domain/money.ts';
 import { fechaCorta, fechaLarga, fechaYHora, mismoDiaLocal } from '../domain/fechas.ts';
+import { saldoCliente } from '../domain/saldos.ts';
 import type { Uuid } from '../domain/types.ts';
 import {
   activarCliente, activarProducto, activarProveedor, altaCliente, altaProducto, altaProveedor,
-  anularCompra, aplicar, aplicarSugerencias, cambiarPrecio, clienteParecido, cobrar,
+  anularCompra, anularVenta, aplicar, aplicarSugerencias, cambiarPrecio, clienteParecido, cobrar,
   descartarSugerencias, editarCliente, editarProducto, editarProveedor, entrarMercaderia,
   estadoVacio, precioDe, productoConCodigo, productoParecido, vender,
   type Ctx, type EstadoApp, type Resultado,
@@ -91,6 +92,8 @@ export const App = () => {
    * único que hay que explicar antes de una acción que no se deshace.
    */
   const [confirmarAnular, setConfirmarAnular] = useState<Uuid | null>(null);
+  /** La venta que está esperando confirmación para anularse. */
+  const [confirmarAnularVenta, setConfirmarAnularVenta] = useState<Uuid | null>(null);
   const [hojaCobro, setHojaCobro] = useState<Uuid | null>(null);
   const [hojaProducto, setHojaProducto] = useState<ProductoVista | null>(null);
   const [hojaPrecios, setHojaPrecios] = useState(false);
@@ -891,6 +894,52 @@ export const App = () => {
     });
   };
 
+  /**
+   * Anular una venta.
+   *
+   * Los tres números que le importan y que se le muestran: cuántas unidades
+   * vuelven al stock, cuánto sale de la caja del día, y cómo le queda la deuda
+   * de ese comercio.
+   */
+  const anularVentaHecha = (ventaId: Uuid) => {
+    const venta = estado.ventas.find((v) => v.id === ventaId);
+    if (!venta) return;
+
+    const c = ctx();
+    const r = anularVenta(estado, ventaId, c);
+    const unidades = venta.items.reduce((a, i) => a + i.cantidad, 0);
+
+    // Cómo queda la deuda de ese comercio una vez anulada esta venta.
+    const deudaDespues = saldoCliente(
+      venta.clienteId,
+      estado.ventas.map((v) => (v.id === ventaId ? { ...v, anuladaEn: c.ahora() } : v)),
+      estado.pagos,
+      hoy,
+    ).saldoCent;
+
+    // Id propio, la venta en el payload: mismo motivo que en la anulación de
+    // ingresos — si la venta todavía espera subir, su `registrar_venta` está en
+    // la cola con ESE id y reusarlo lo pisaría.
+    void despachar(r, [{
+      tipo: 'anular_venta', id: uuidv7(),
+      payload: { p_id: ventaId, p_fecha: r.ventas![0].anuladaEn },
+    }]);
+
+    setConfirmarAnularVenta(null);
+    setFichaVenta(null);
+    setExito({
+      titulo: 'Venta anulada',
+      monto: plata(venta.totalCent),
+      texto: venta.cobradoCent > 0
+        ? `La mercadería volvió al stock y ${plata(venta.cobradoCent)} salieron de la caja de hoy.`
+        : 'La mercadería volvió al stock y la venta ya no figura como deuda.',
+      deltas: [
+        { etiqueta: 'Volvieron al stock', valor: `${unidades} u.` },
+        { etiqueta: 'Ahora te debe', valor: plata(deudaDespues) },
+      ],
+    });
+  };
+
   const cambiarActivoProveedor = (id: Uuid, activo: boolean) => {
     const r = activarProveedor(estado, id, activo);
     void despachar(r, [filaProveedor(r.proveedores![0])]);
@@ -1007,7 +1056,7 @@ export const App = () => {
               * cero mientras todavía estaba vendiendo.
               */}
             <b className="num">{plata(
-              estado.ventas.filter((v) => mismoDiaLocal(v.fecha, hoy))
+              estado.ventas.filter((v) => !v.anuladaEn && mismoDiaLocal(v.fecha, hoy))
                 .reduce((a, v) => a + v.cobradoCent, 0) +
               estado.pagos.filter((p) => mismoDiaLocal(p.fecha, hoy))
                 .reduce((a, p) => a + p.montoCent, 0),
@@ -1277,12 +1326,19 @@ export const App = () => {
         if (!v) return null;
         const cliente = estado.clientes.find((c) => c.id === v.clienteId);
         const debe = Math.max(0, v.totalCent - v.cobradoCent);
-        const estadoCobro = debe === 0 ? 'Cobrado' : v.cobradoCent > 0 ? 'Pago parcial' : 'Queda en cuenta';
+        const estadoCobro = v.anuladaEn
+          ? 'Anulada'
+          : debe === 0 ? 'Cobrado' : v.cobradoCent > 0 ? 'Pago parcial' : 'Queda en cuenta';
 
         return (
           <Hoja alCerrar={() => setFichaVenta(null)}>
             <h3>{cliente?.nombre ?? 'Venta'}</h3>
             <p className="sub">{fechaYHora(v.fecha)} · {estadoCobro}</p>
+
+            {v.anuladaEn && (
+              <Alerta tipo="warn" icono="i-alert" titulo="Esta venta está anulada"
+                texto={`Se anuló el ${fechaYHora(v.anuladaEn)}. La mercadería volvió al stock y la venta no cuenta en la caja ni en lo que te deben.`} />
+            )}
 
             <div className="stack" style={{ marginTop: 12 }}>
               {v.items.map((it) => {
@@ -1309,20 +1365,85 @@ export const App = () => {
                 <span style={{ fontWeight: 700 }}>Total</span>
                 <b className="num">{plata(v.totalCent)}</b>
               </div>
+              {/* En pasado si está anulada: hoy ya no debe nada de esta venta. */}
               <div className="tot-fila">
-                <span>Pagó</span>
+                <span>{v.anuladaEn ? 'Había pagado' : 'Pagó'}</span>
                 <b className="num">{plata(v.cobradoCent)}</b>
               </div>
               {debe > 0 && (
-                <div className="tot-fila debe">
-                  <span>Queda debiendo</span>
+                <div className={`tot-fila ${v.anuladaEn ? '' : 'debe'}`}>
+                  <span>{v.anuladaEn ? 'Quedaba debiendo' : 'Queda debiendo'}</span>
                   <b className="num">{plata(debe)}</b>
                 </div>
               )}
             </div>
 
-            <BotonCompartir datos={reciboDeVenta(estado, v, NEGOCIO)} secundario />
-            <button className="btn block" onClick={() => setFichaVenta(null)}>Cerrar</button>
+            {/*
+              * Sin comprobante si está anulada. Mandarle a un comercio el
+              * comprobante de una venta que se dio de baja sería peor que no
+              * mandarle nada: figura un total que él ya no le va a cobrar.
+              */}
+            {!v.anuladaEn && <BotonCompartir datos={reciboDeVenta(estado, v, NEGOCIO)} secundario />}
+            <button className="btn block" style={{ marginTop: v.anuladaEn ? 12 : 8 }}
+              onClick={() => setFichaVenta(null)}>Cerrar</button>
+
+            {!v.anuladaEn && (
+              <button className="btn ghost block" style={{ marginTop: 6, color: 'var(--bad)' }}
+                onClick={() => setConfirmarAnularVenta(v.id)}>
+                Anular esta venta
+              </button>
+            )}
+          </Hoja>
+        );
+      })()}
+
+      {/* La confirmación de la venta. Dice con números qué va a pasar. */}
+      {confirmarAnularVenta && (() => {
+        const v = estado.ventas.find((x) => x.id === confirmarAnularVenta);
+        if (!v) return null;
+        const cliente = estado.clientes.find((c) => c.id === v.clienteId);
+        const unidades = v.items.reduce((a, i) => a + i.cantidad, 0);
+        const debe = Math.max(0, v.totalCent - v.cobradoCent);
+
+        return (
+          <Hoja alCerrar={() => setConfirmarAnularVenta(null)}>
+            <h3>¿Anular esta venta?</h3>
+            <p className="sub">Esto no se puede deshacer desde la app.</p>
+
+            <div className="card" style={{ marginTop: 12 }}>
+              <div className="tot-fila">
+                <span>Vuelven al stock</span>
+                <b className="num">{unidades} u.</b>
+              </div>
+              {v.cobradoCent > 0 && (
+                <div className="tot-fila">
+                  <span>Sale de la caja de hoy</span>
+                  <b className="num">{plata(v.cobradoCent)}</b>
+                </div>
+              )}
+              {debe > 0 && (
+                <div className="tot-fila">
+                  <span>{cliente?.nombre ?? 'El comercio'} deja de deberte</span>
+                  <b className="num">{plata(debe)}</b>
+                </div>
+              )}
+            </div>
+
+            {v.cobradoCent > 0 && (
+              <p className="sub" style={{ marginTop: 12 }}>
+                Ojo: esto saca la venta de los números, pero la plata que ya te dio
+                no se devuelve sola. Si se la tenés que devolver, es aparte.
+              </p>
+            )}
+
+            <button className="btn accent lg block" style={{ marginTop: 14, background: 'var(--bad)' }}
+              onClick={() => anularVentaHecha(v.id)}>
+              Sí, anular la venta
+            </button>
+            <button className="btn outline block" style={{ marginTop: 8 }}
+              onClick={() => setConfirmarAnularVenta(null)}>
+              No, dejarla como está
+            </button>
           </Hoja>
         );
       })()}

@@ -176,6 +176,7 @@ const aVenta = (f: Fila): Venta => ({
   totalCent: Number(f.total_cent),
   cobradoCent: Number(f.cobrado_cent ?? 0),
   formaPago: String(f.forma_pago) as Venta['formaPago'],
+  ...(f.anulada_en ? { anuladaEn: iso(f.anulada_en) } : {}),
   items: ((f.venta_items as Fila[] | undefined) ?? []).map(aVentaItem),
 });
 

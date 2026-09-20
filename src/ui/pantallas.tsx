@@ -310,7 +310,8 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
               * "mandámelo de nuevo" es lo que más le piden.
               */}
             {v.ventasDeHoy.map((x) => (
-              <button className="row" key={x.id} onClick={() => acc.verVenta(x.id)}>
+              <button className={`row ${x.anulada ? 'anulada' : ''}`} key={x.id}
+                onClick={() => acc.verVenta(x.id)}>
                 <span className="thumb">
                   <span style={{ fontFamily: 'Archivo', fontWeight: 700, fontSize: 12 }}>{x.hora}</span>
                 </span>
@@ -318,7 +319,8 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
                 <span className="row-end">
                   <b>{plata(x.totalCent)}</b>
                   <span>
-                    {x.estado === 'cobrado' ? 'cobrado'
+                    {x.estado === 'anulada' ? 'anulada'
+                      : x.estado === 'cobrado' ? 'cobrado'
                       : x.estado === 'parcial' ? `pagó ${plataCorta(x.cobradoCent)}`
                       : 'quedó debiendo'}
                   </span>
@@ -1129,7 +1131,7 @@ export const PantallaNumeros = ({ estado, hoy }: Props) => {
         * nada. Conviene aclarar que está vacío porque todavía no vendió, y no
         * porque el mes le fue mal.
         */}
-      {estado.ventas.length === 0 && (
+      {estado.ventas.filter((v) => !v.anuladaEn).length === 0 && (
         <Alerta tipo="ok" icono="i-chart" titulo="Todavía no hay ventas para medir"
           texto="Estos números se llenan solos con cada venta que cargues. No hay nada que configurar." />
       )}

@@ -25,6 +25,17 @@ import { costoDe, historialPrecios, precioDe, type EstadoApp } from '../app/esta
  */
 const mismoDia = mismoDiaLocal;
 
+/**
+ * Una venta anulada no cuenta para ningún número.
+ *
+ * Sí aparece en las listas, marcada — él tiene que poder ver qué anuló. Pero no
+ * suma en la caja del día, ni en la ganancia, ni en la deuda del comercio, ni
+ * cuenta como "hoy hiciste una venta". La deuda y la ganancia están protegidas
+ * más adentro, en `saldoCliente` y `gananciaDelPeriodo`; acá se cuidan los
+ * números que se arman en esta capa.
+ */
+const cuenta = (v: { anuladaEn?: string }): boolean => !v.anuladaEn;
+
 // ---------------------------------------------------------------------------
 // Hoy
 // ---------------------------------------------------------------------------
@@ -51,8 +62,13 @@ export interface VistaHoy {
     hora: string;
     totalCent: Cent;
     cobradoCent: Cent;
-    /** Tres estados y no dos: el pago parcial no es ni cobrado ni deuda. */
-    estado: 'cobrado' | 'parcial' | 'debe';
+    anulada: boolean;
+    /**
+     * Cuatro estados. Eran dos —cobrado o debiendo— hasta que el pago parcial
+     * agregó el tercero y la anulación el cuarto. "Anulada" gana sobre todos:
+     * una venta anulada no está cobrada ni debida, no está.
+     */
+    estado: 'cobrado' | 'parcial' | 'debe' | 'anulada';
     items: number;
   }[];
   /** Las compras del día. Las anuladas siguen apareciendo, marcadas. */
@@ -106,12 +122,15 @@ export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
   const deudas = vistaDeudas(e, hoyIso);
   const diaSemana = diaDeSemanaLocal(hoyIso);
 
+  // Todas las del día, anuladas incluidas: la lista las muestra.
   const ventasHoy = e.ventas.filter((v) => mismoDia(v.fecha, hoyIso));
+  // Y las que de verdad cuentan, para los números.
+  const valenHoy = ventasHoy.filter(cuenta);
   const pagosHoy = e.pagos.filter((p) => mismoDia(p.fecha, hoyIso));
   const comprasHoy = e.compras.filter((c) => mismoDia(c.fecha, hoyIso));
 
   const cobradoHoyCent =
-    ventasHoy.reduce((a, v) => a + v.cobradoCent, 0) +
+    valenHoy.reduce((a, v) => a + v.cobradoCent, 0) +
     pagosHoy.reduce((a, p) => a + p.montoCent, 0);
 
   const vencidas = deudas.lista.filter((d) => d.dias > e.parametros.diasMuyAtrasado);
@@ -122,13 +141,15 @@ export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
       clienteId: c.id,
       nombre: c.nombre,
       zona: c.zona,
-      visitado: ventasHoy.some((v) => v.clienteId === c.id),
+      // Una venta anulada no es una visita: si la anuló, ese comercio sigue
+      // sin atender y tiene que seguir apareciendo como pendiente en la ruta.
+      visitado: valenHoy.some((v) => v.clienteId === c.id),
       saldoCent: deudas.lista.find((d) => d.clienteId === c.id)?.saldoCent ?? 0,
     }));
 
   return {
     cobradoHoyCent,
-    vendidoHoyCent: ventasHoy.reduce((a, v) => a + v.totalCent, 0),
+    vendidoHoyCent: valenHoy.reduce((a, v) => a + v.totalCent, 0),
     enLaCalleCent: deudas.totalCent,
     alertaDeuda: vencidas[0] ?? null,
     ruta,
@@ -141,7 +162,9 @@ export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
         hora: horaLocal(v.fecha),
         totalCent: v.totalCent,
         cobradoCent: v.cobradoCent,
-        estado: v.cobradoCent >= v.totalCent ? 'cobrado' as const
+        anulada: Boolean(v.anuladaEn),
+        estado: v.anuladaEn ? 'anulada' as const
+          : v.cobradoCent >= v.totalCent ? 'cobrado' as const
           : v.cobradoCent > 0 ? 'parcial' as const
           : 'debe' as const,
         items: v.items.reduce((a, i) => a + i.cantidad, 0),
@@ -152,7 +175,7 @@ export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
       .filter((c) => !c.anuladaEn)
       .reduce((a, c) => a + c.totalCent, 0),
     misiones: {
-      venta: ventasHoy.length > 0,
+      venta: valenHoy.length > 0,
       cobro: pagosHoy.length > 0,
     },
   };
@@ -289,7 +312,7 @@ const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 export const vistaNumeros = (e: EstadoApp, hoyIso: string, dias = 30): VistaNumeros => {
   const desde = new Date(Date.parse(hoyIso) - dias * 86_400_000).toISOString();
-  const delPeriodo = e.ventas.filter((v) => v.fecha >= desde);
+  const delPeriodo = e.ventas.filter((v) => cuenta(v) && v.fecha >= desde);
   const g = gananciaDelPeriodo(delPeriodo);
 
   const ultimos7 = Array.from({ length: 7 }, (_, i) => {
@@ -298,7 +321,7 @@ export const vistaNumeros = (e: EstadoApp, hoyIso: string, dias = 30): VistaNume
       diaIso,
       etiqueta: i === 6 ? 'Hoy' : DIAS[diaDeSemanaLocal(`${diaIso}T12:00:00.000Z`)],
       ventaCent: e.ventas
-        .filter((v) => diaLocal(v.fecha) === diaIso)
+        .filter((v) => cuenta(v) && diaLocal(v.fecha) === diaIso)
         .reduce((a, v) => a + v.totalCent, 0),
       esHoy: i === 6,
     };

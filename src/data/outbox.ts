@@ -46,12 +46,15 @@ export type Operacion =
   | { tipo: 'guardar_producto'; id: Uuid; payload: Record<string, unknown> }
   | { tipo: 'guardar_proveedor'; id: Uuid; payload: Record<string, unknown> }
   /*
-   * Anular un ingreso. Es la única operación que NO usa como id el de la fila
-   * que toca: la compra ya tiene su `registrar_compra` en la cola con ese id, y
-   * la cola guarda por id, así que reusarlo pisaría el alta y la compra nunca
-   * llegaría al servidor. Lleva un id propio y la compra va en el payload.
+   * Anular un ingreso. Junto con `anular_venta`, las dos únicas operaciones que
+   * NO usan como id el de la fila que tocan: la compra ya tiene su
+   * `registrar_compra` en la cola con ese id, y la cola guarda por id, así que
+   * reusarlo pisaría el alta y la compra nunca llegaría al servidor. Llevan id
+   * propio y la fila va en el payload.
    */
-  | { tipo: 'anular_compra'; id: Uuid; payload: { p_id: Uuid } & Record<string, unknown> };
+  | { tipo: 'anular_compra'; id: Uuid; payload: { p_id: Uuid } & Record<string, unknown> }
+  /** Anular una venta. Mismo esquema de id propio que `anular_compra`. */
+  | { tipo: 'anular_venta'; id: Uuid; payload: { p_id: Uuid } & Record<string, unknown> };
 
 /**
  * Qué filas toca una operación.
@@ -63,7 +66,9 @@ export type Operacion =
  * compra sin anular y el stock volvería a estar mal.
  */
 export const idsAfectados = (op: Operacion): Uuid[] =>
-  op.tipo === 'anular_compra' ? [op.id, op.payload.p_id] : [op.id];
+  op.tipo === 'anular_compra' || op.tipo === 'anular_venta'
+    ? [op.id, op.payload.p_id]
+    : [op.id];
 
 export type EstadoItem = 'pendiente' | 'enviando' | 'error';
 
