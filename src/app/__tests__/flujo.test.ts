@@ -14,6 +14,7 @@ import {
   altaCliente,
   aplicar,
   aplicarSugerencias,
+  cambiarPrecio,
   clienteParecido,
   cobrar,
   costoDe,
@@ -25,7 +26,7 @@ import {
   type Ctx,
 } from '../estado.ts';
 import { construirSemilla, idsSecuenciales, semillaConDiaEnCurso } from '../semilla.ts';
-import { vistaDeudas, vistaHoy, vistaNumeros, vistaParaVender } from '../../ui/vistas.ts';
+import { reciboDeVenta, vistaDeudas, vistaHoy, vistaNumeros, vistaParaVender } from '../../ui/vistas.ts';
 
 const HOY = '2026-09-15T14:00:00.000Z'; // un martes
 const ctx = (): Ctx => ({ nuevoId: idsSecuenciales('t'), ahora: () => HOY });
@@ -158,6 +159,140 @@ describe('cobrar', () => {
     expect(saldoCliente('c3', e1.ventas, e1.pagos, HOY).saldoCent).toBe(antes - pesos(10000));
     // La venta quedó exactamente igual: el cobro es una fila nueva.
     expect(e1.ventas.find((v) => v.id === ventaOriginal.id)).toEqual(ventaOriginal);
+  });
+});
+
+describe('cobro parcial', () => {
+  /*
+   * Las tres opciones que ve él: "me paga el total", "me paga una parte" y "me
+   * lo debe todo". Lo que se prueba acá es que la del medio deje la plata en los
+   * dos lados correctos, porque es la única que puede quedar a mitad de camino:
+   * si el cobro se anota entero, la deuda desaparece y él sale a cobrar algo que
+   * el sistema dice que ya cobró.
+   */
+  const CLIENTE = 'c1';
+
+  const conVenta = (cobradoCent?: number) => {
+    const e0 = construirSemilla(HOY);
+    const e1 = aplicar(e0, vender(e0, {
+      clienteId: CLIENTE,
+      items: [{ productoId: 'p1', cantidad: 10 }],
+      formaPago: cobradoCent === undefined ? 'efectivo' : 'mixto',
+      ...(cobradoCent === undefined ? {} : { cobradoCent }),
+    }, ctx()));
+    return { e0, e1, venta: e1.ventas.at(-1)! };
+  };
+
+  it('el pago de una parte entra como cobrado y el resto como deuda', () => {
+    const { e0, venta } = conVenta();          // primero cuánto sale la venta
+    const mitad = Math.floor(venta.totalCent / 2);
+
+    const e1 = aplicar(e0, vender(e0, {
+      clienteId: CLIENTE,
+      items: [{ productoId: 'p1', cantidad: 10 }],
+      formaPago: 'mixto',
+      cobradoCent: mitad,
+    }, ctx()));
+    const v = e1.ventas.at(-1)!;
+
+    expect(v.cobradoCent).toBe(mitad);
+    expect(v.totalCent - v.cobradoCent).toBe(v.totalCent - mitad);
+
+    // Y lo que queda aparece en la cuenta corriente, no en el aire.
+    const antes = saldoCliente(CLIENTE, e0.ventas, e0.pagos, HOY).saldoCent;
+    const despues = saldoCliente(CLIENTE, e1.ventas, e1.pagos, HOY).saldoCent;
+    expect(despues - antes).toBe(v.totalCent - mitad);
+  });
+
+  it('"me paga el total" no deja deuda', () => {
+    const { e0, e1, venta } = conVenta();
+    expect(venta.cobradoCent).toBe(venta.totalCent);
+    expect(saldoCliente(CLIENTE, e1.ventas, e1.pagos, HOY).saldoCent)
+      .toBe(saldoCliente(CLIENTE, e0.ventas, e0.pagos, HOY).saldoCent);
+  });
+
+  it('tipear de más no genera una deuda negativa', () => {
+    /*
+     * Un cobrado mayor que el total daría un saldo negativo, o sea el sistema
+     * diciéndole que él le debe plata al comercio. Se recorta contra el total.
+     */
+    const { e0, venta } = conVenta();
+    const e1 = aplicar(e0, vender(e0, {
+      clienteId: CLIENTE,
+      items: [{ productoId: 'p1', cantidad: 10 }],
+      formaPago: 'mixto',
+      cobradoCent: venta.totalCent * 3,
+    }, ctx()));
+    const v = e1.ventas.at(-1)!;
+
+    expect(v.cobradoCent).toBe(v.totalCent);
+    expect(v.totalCent - v.cobradoCent).toBe(0);
+  });
+
+  it('un cobrado en cero es lo mismo que "me lo debe todo"', () => {
+    const { e0 } = conVenta();
+    const e1 = aplicar(e0, vender(e0, {
+      clienteId: CLIENTE,
+      items: [{ productoId: 'p1', cantidad: 10 }],
+      formaPago: 'cuenta',
+      cobradoCent: 0,
+    }, ctx()));
+    const v = e1.ventas.at(-1)!;
+    expect(v.cobradoCent).toBe(0);
+  });
+
+  it('lo cobrado de una venta parcial cuenta en el día', () => {
+    const { e0, venta } = conVenta();
+    const mitad = Math.floor(venta.totalCent / 2);
+    const e1 = aplicar(e0, vender(e0, {
+      clienteId: CLIENTE,
+      items: [{ productoId: 'p1', cantidad: 10 }],
+      formaPago: 'mixto',
+      cobradoCent: mitad,
+    }, ctx()));
+
+    const antes = vistaHoy(e0, HOY).cobradoHoyCent;
+    expect(vistaHoy(e1, HOY).cobradoHoyCent).toBe(antes + mitad);
+  });
+});
+
+describe('el comprobante', () => {
+  it('sale de la venta guardada, con los precios de ese momento', () => {
+    /*
+     * Importa que salga de la venta y no del catálogo: si mañana sube el precio
+     * del producto, el comprobante de la venta de hoy tiene que seguir diciendo
+     * lo que él cobró hoy. Un comprobante que cambia solo es un comprobante que
+     * no sirve para nada.
+     */
+    const e0 = construirSemilla(HOY);
+    const e1 = aplicar(e0, vender(e0, {
+      clienteId: 'c1',
+      items: [{ productoId: 'p1', cantidad: 3 }],
+      formaPago: 'mixto',
+      cobradoCent: 100_00,
+    }, ctx()));
+    const v = e1.ventas.at(-1)!;
+
+    const antes = reciboDeVenta(e1, v, 'Pompi Mayorista');
+    const e2 = aplicar(e1, cambiarPrecio(e1, {
+      productoId: 'p1', precioCent: pesos(99_999), motivo: 'cambio a mano',
+    }, ctx()));
+    const despues = reciboDeVenta(e2, v, 'Pompi Mayorista');
+
+    expect(despues.lineas[0].precioUnitarioCent).toBe(antes.lineas[0].precioUnitarioCent);
+    expect(despues.totalCent).toBe(v.totalCent);
+    expect(despues.pagadoCent).toBe(100_00);
+    expect(despues.saldoCent).toBe(v.totalCent - 100_00);
+  });
+
+  it('una venta cobrada entera no muestra saldo', () => {
+    const e0 = construirSemilla(HOY);
+    const e1 = aplicar(e0, vender(e0, {
+      clienteId: 'c1', items: [{ productoId: 'p1', cantidad: 2 }], formaPago: 'efectivo',
+    }, ctx()));
+    const r = reciboDeVenta(e1, e1.ventas.at(-1)!, 'Pompi Mayorista');
+    expect(r.saldoCent).toBe(0);
+    expect(r.pagadoCent).toBe(r.totalCent);
   });
 });
 

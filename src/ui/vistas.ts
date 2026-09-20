@@ -11,11 +11,19 @@
 import type { Cent } from '../domain/money.ts';
 import { gananciaDelPeriodo } from '../domain/precios.ts';
 import { clasificar, diasEntre, saldoCliente, type Antiguedad } from '../domain/saldos.ts';
+import { diaDeSemanaLocal, diaLocal, diaLocalDesplazado, horaLocal, mismoDiaLocal } from '../domain/fechas.ts';
 import { calcularStock } from '../domain/stock.ts';
-import type { Uuid } from '../domain/types.ts';
+import type { Uuid, Venta } from '../domain/types.ts';
+import type { DatosRecibo } from './recibo.ts';
 import { costoDe, historialPrecios, precioDe, type EstadoApp } from '../app/estado.ts';
 
-const mismoDia = (a: string, b: string): boolean => a.slice(0, 10) === b.slice(0, 10);
+/*
+ * "Mismo día" es el día de ACÁ, no el de UTC. Antes esto comparaba los diez
+ * primeros caracteres del texto ISO, que son el día en UTC: a las 21 de
+ * Argentina ya era mañana allá, y el resumen del día se le reseteaba mientras
+ * todavía estaba vendiendo. Ver `src/domain/fechas.ts`.
+ */
+const mismoDia = mismoDiaLocal;
 
 // ---------------------------------------------------------------------------
 // Hoy
@@ -37,7 +45,16 @@ export interface VistaHoy {
   /** La deuda más vieja que pasó el umbral. Es la alerta que se muestra arriba. */
   alertaDeuda: DeudaVista | null;
   ruta: { clienteId: Uuid; nombre: string; zona?: string; visitado: boolean; saldoCent: Cent }[];
-  ventasDeHoy: { id: Uuid; cliente: string; hora: string; totalCent: Cent; cobrado: boolean; items: number }[];
+  ventasDeHoy: {
+    id: Uuid;
+    cliente: string;
+    hora: string;
+    totalCent: Cent;
+    cobradoCent: Cent;
+    /** Tres estados y no dos: el pago parcial no es ni cobrado ni deuda. */
+    estado: 'cobrado' | 'parcial' | 'debe';
+    items: number;
+  }[];
   /**
    * El día en dos pasos. Era en tres: el tercero era dejar el auto cargado, y se
    * fue junto con el auto.
@@ -47,7 +64,7 @@ export interface VistaHoy {
 
 export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
   const deudas = vistaDeudas(e, hoyIso);
-  const diaSemana = new Date(hoyIso).getDay();
+  const diaSemana = diaDeSemanaLocal(hoyIso);
 
   const ventasHoy = e.ventas.filter((v) => mismoDia(v.fecha, hoyIso));
   const pagosHoy = e.pagos.filter((p) => mismoDia(p.fecha, hoyIso));
@@ -80,9 +97,12 @@ export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
       .map((v) => ({
         id: v.id,
         cliente: e.clientes.find((c) => c.id === v.clienteId)?.nombre ?? '—',
-        hora: v.fecha.slice(11, 16),
+        hora: horaLocal(v.fecha),
         totalCent: v.totalCent,
-        cobrado: v.cobradoCent >= v.totalCent,
+        cobradoCent: v.cobradoCent,
+        estado: v.cobradoCent >= v.totalCent ? 'cobrado' as const
+          : v.cobradoCent > 0 ? 'parcial' as const
+          : 'debe' as const,
         items: v.items.reduce((a, i) => a + i.cantidad, 0),
       })),
     misiones: {
@@ -227,13 +247,12 @@ export const vistaNumeros = (e: EstadoApp, hoyIso: string, dias = 30): VistaNume
   const g = gananciaDelPeriodo(delPeriodo);
 
   const ultimos7 = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(Date.parse(hoyIso) - (6 - i) * 86_400_000);
-    const diaIso = d.toISOString().slice(0, 10);
+    const diaIso = diaLocalDesplazado(hoyIso, i - 6);
     return {
       diaIso,
-      etiqueta: i === 6 ? 'Hoy' : DIAS[d.getDay()],
+      etiqueta: i === 6 ? 'Hoy' : DIAS[diaDeSemanaLocal(`${diaIso}T12:00:00.000Z`)],
       ventaCent: e.ventas
-        .filter((v) => v.fecha.slice(0, 10) === diaIso)
+        .filter((v) => diaLocal(v.fecha) === diaIso)
         .reduce((a, v) => a + v.totalCent, 0),
       esHoy: i === 6,
     };
@@ -326,6 +345,36 @@ export const vistaProveedores = (
  */
 export const cuantosActivos = (l: readonly { activo: boolean }[]): number =>
   l.reduce((a, x) => a + (x.activo ? 1 : 0), 0);
+
+/**
+ * Lo que va en el comprobante de una venta.
+ *
+ * Sale de la venta guardada y no del carrito que había en pantalla: los precios
+ * de una venta quedan congelados en sus renglones, así que un comprobante
+ * generado hoy y otro del mismo hecho generado en un mes dicen exactamente lo
+ * mismo, aunque el precio de lista haya cambiado tres veces en el medio.
+ *
+ * El nombre y el código del producto sí se leen del catálogo de ahora, porque
+ * son descriptivos: si le corrigió una falta de ortografía al nombre, el
+ * comprobante nuevo tiene que salir con el nombre corregido.
+ */
+export const reciboDeVenta = (e: EstadoApp, venta: Venta, negocio: string): DatosRecibo => ({
+  negocio,
+  cliente: e.clientes.find((c) => c.id === venta.clienteId)?.nombre ?? 'Consumidor final',
+  fechaIso: venta.fecha,
+  lineas: venta.items.map((it) => {
+    const p = e.productos.find((x) => x.id === it.productoId);
+    return {
+      codigo: p?.codigo,
+      nombre: p?.nombre ?? 'Producto',
+      cantidad: it.cantidad,
+      precioUnitarioCent: it.precioUnitarioCent,
+    };
+  }),
+  totalCent: venta.totalCent,
+  pagadoCent: venta.cobradoCent,
+  saldoCent: Math.max(0, venta.totalCent - venta.cobradoCent),
+});
 
 /** Las sugerencias de precio que esperan una decisión. */
 export const sugerenciasPendientes = (e: EstadoApp) =>

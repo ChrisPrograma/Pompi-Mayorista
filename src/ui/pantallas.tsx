@@ -1,5 +1,5 @@
 import { useMemo, useState, type ChangeEvent } from 'react';
-import { pesos, type Cent } from '../domain/money.ts';
+import { aCentavos, pesos, type Cent } from '../domain/money.ts';
 import type { Uuid } from '../domain/types.ts';
 import type { EstadoApp } from '../app/estado.ts';
 import {
@@ -28,12 +28,20 @@ export type Ruta =
 
 export interface Acciones {
   ir: (r: Ruta) => void;
-  vender: (clienteId: Uuid, items: { productoId: Uuid; cantidad: number }[], forma: 'efectivo' | 'transferencia' | 'cuenta') => void;
+  vender: (
+    clienteId: Uuid,
+    items: { productoId: Uuid; cantidad: number }[],
+    forma: 'efectivo' | 'cuenta' | 'mixto',
+    /** Cuánto entregó de verdad. Es lo que decide qué parte va a la deuda. */
+    cobradoCent: Cent,
+  ) => void;
   cobrar: (clienteId: Uuid) => void;
   entrar: (proveedorId: Uuid, items: { productoId: Uuid; cantidad: number; costoUnitarioCent: Cent }[], condicion: 'contado' | 'cuenta') => void;
   verProducto: (p: ProductoVista) => void;
   nuevoCliente: (origen: 'vender' | 'clientes') => void;
   verCliente: (id: Uuid) => void;
+  /** Abre el detalle de una venta ya hecha, con su comprobante. */
+  verVenta: (id: Uuid) => void;
   nuevoProducto: () => void;
   nuevoProveedor: () => void;
   verProveedor: (id: Uuid) => void;
@@ -293,17 +301,28 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
             <span className="hint">{plata(v.vendidoHoyCent)}</span>
           </div>
           <div className="stack">
+            {/*
+              * Cada venta es un botón: tocándola se abre el detalle con los
+              * productos y el botón para volver a mandar el comprobante. Es el
+              * pedido más chico de todos y el que más veces se va a usar —
+              * "mandámelo de nuevo" es lo que más le piden.
+              */}
             {v.ventasDeHoy.map((x) => (
-              <div className="row" key={x.id}>
+              <button className="row" key={x.id} onClick={() => acc.verVenta(x.id)}>
                 <span className="thumb">
                   <span style={{ fontFamily: 'Archivo', fontWeight: 700, fontSize: 12 }}>{x.hora}</span>
                 </span>
                 <span className="row-main"><b>{x.cliente}</b><span>{x.items} productos</span></span>
                 <span className="row-end">
                   <b>{plata(x.totalCent)}</b>
-                  <span>{x.cobrado ? 'cobrado' : 'quedó debiendo'}</span>
+                  <span>
+                    {x.estado === 'cobrado' ? 'cobrado'
+                      : x.estado === 'parcial' ? `pagó ${plataCorta(x.cobradoCent)}`
+                      : 'quedó debiendo'}
+                  </span>
                 </span>
-              </div>
+                <Icono id="i-arrow" clase="ico-s ico-arrow" />
+              </button>
             ))}
           </div>
         </>
@@ -319,7 +338,16 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
   const [paso, setPaso] = useState(clienteInicial ? 2 : 1);
   const [clienteId, setClienteId] = useState<Uuid | null>(clienteInicial ?? null);
   const [items, setItems] = useState<Record<Uuid, number>>({});
-  const [forma, setForma] = useState<'efectivo' | 'transferencia' | 'cuenta' | null>(null);
+  /*
+   * Las tres opciones son del cliente, y están puestas en el orden en el que
+   * pasan de verdad: casi siempre le pagan todo, a veces una parte, y de vez en
+   * cuando queda anotado. Antes eran "efectivo" y "transferencia", que son la
+   * misma cosa para la cuenta corriente y lo obligaban a elegir algo que no le
+   * cambia nada.
+   */
+  const [forma, setForma] = useState<'total' | 'parte' | 'debe' | null>(null);
+  /** Lo que entrega, en pesos, tal como él lo tipea. Solo aplica a "una parte". */
+  const [entrega, setEntrega] = useState('');
 
   const productos = useMemo(() => vistaParaVender(estado), [estado]);
   const deudas = useMemo(() => vistaDeudas(estado, hoy), [estado, hoy]);
@@ -442,6 +470,31 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
     );
   }
 
+  /*
+   * Las cuentas del pago parcial.
+   *
+   * `entregaCent` se recorta contra el total: si tipea de más, se toma la venta
+   * entera y nada más. Un cobrado mayor que el total daría una deuda negativa,
+   * o sea el sistema diciéndole que él le debe plata al comercio.
+   *
+   * El botón se bloquea solo en los dos casos en que el número no quiere decir
+   * nada: cero (ahí la opción correcta es "me lo debe todo") y el total exacto
+   * (ahí es "me paga el total"). No es rigor por el rigor — si dejara pasar un
+   * parcial de cero, la venta quedaría igual que una a cuenta pero anotada como
+   * pago parcial, y el comprobante diría dos cosas distintas.
+   */
+  const entregaCent = Math.min(aCentavos(entrega), total);
+  const restoCent = Math.max(0, total - entregaCent);
+  const avisoParcial =
+    forma !== 'parte' || !entrega.trim() ? null
+      : entregaCent <= 0 ? 'Poné cuánto te entrega. Si no te paga nada, elegí "Me lo debe todo".'
+      : restoCent === 0 ? 'Te está pagando todo. Para eso está "Me paga el total".'
+      : null;
+  const puedeCerrar =
+    forma === 'total' || forma === 'debe'
+      ? true
+      : forma === 'parte' && entregaCent > 0 && restoCent > 0;
+
   return (
     <div className="view">
       <div className="steps"><i className="on" /><i className="on" /><i className="on" /></div>
@@ -471,23 +524,52 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
 
       <div className="stack">
         {([
-          ['efectivo', 'i-cash', 'Me paga en efectivo', 'Entra a la caja del día', false],
-          ['transferencia', 'i-phone', 'Me transfiere', 'Igual queda registrado como cobrado', false],
-          ['cuenta', 'i-clock', 'Me lo debe', 'Se suma a lo que ya te debe y no te lo olvidás', true],
+          ['total', 'i-cash', 'Me paga el total', 'Registra el cobro completo de la venta', false],
+          ['parte', 'i-split', 'Me paga una parte', 'Ingresás lo que te entrega y el resto va a deuda', false],
+          ['debe', 'i-clock', 'Me lo debe todo', 'El total se suma a su cuenta corriente', true],
         ] as const).map(([valor, icono, titulo, sub, esDeuda]) => (
-          <button key={valor} className={`pay-opt ${esDeuda ? 'debt' : ''}`}
-            aria-pressed={forma === valor} onClick={() => setForma(valor)}>
-            <span className={`thumb ${esDeuda ? 'c-higiene' : ''}`}><Icono id={icono} /></span>
-            <span style={{ flex: 1 }}><b>{titulo}</b><span>{sub}</span></span>
-          </button>
+          <div key={valor}>
+            <button className={`pay-opt ${esDeuda ? 'debt' : ''}`}
+              aria-pressed={forma === valor} onClick={() => setForma(valor)}>
+              <span className={`thumb ${esDeuda ? 'c-higiene' : ''}`}><Icono id={icono} /></span>
+              <span style={{ flex: 1 }}><b>{titulo}</b><span>{sub}</span></span>
+            </button>
+
+            {/*
+              * El campo aparece pegado a la opción y solo cuando la elige. Si
+              * estuviera siempre visible sería un campo vacío que hay que
+              * ignorar en el 90% de las ventas, y esas son las que lo cansan.
+              */}
+            {valor === 'parte' && forma === 'parte' && (
+              <div className="parcial">
+                <label className="campo">
+                  <span>¿Cuánto te entrega?</span>
+                  <input className="texto num" inputMode="decimal" autoFocus
+                    value={entrega} placeholder="0"
+                    onChange={(ev: ChangeEvent<HTMLInputElement>) =>
+                      setEntrega(ev.target.value.replace(/[^0-9.,]/g, ''))} />
+                </label>
+
+                <div className="parcial-cuentas">
+                  <div><span>Te entrega</span><b className="num">{plata(entregaCent)}</b></div>
+                  <div className={restoCent > 0 ? 'debe' : ''}>
+                    <span>Queda debiendo</span><b className="num">{plata(restoCent)}</b>
+                  </div>
+                </div>
+
+                {avisoParcial && <p className="parcial-aviso" role="status">{avisoParcial}</p>}
+              </div>
+            )}
+          </div>
         ))}
       </div>
 
-      <button className="btn accent lg block" disabled={!forma}
-        onClick={() => forma && clienteId && acc.vender(
+      <button className="btn accent lg block" disabled={!puedeCerrar}
+        onClick={() => puedeCerrar && clienteId && acc.vender(
           clienteId,
           lineas.map(([productoId, cantidad]) => ({ productoId, cantidad })),
-          forma,
+          forma === 'debe' ? 'cuenta' : forma === 'parte' ? 'mixto' : 'efectivo',
+          forma === 'total' ? total : forma === 'parte' ? entregaCent : 0,
         )}>
         Cerrar la venta
       </button>

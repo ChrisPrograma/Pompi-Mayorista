@@ -68,3 +68,20 @@ const formateador = new Intl.NumberFormat('es-AR', {
 
 /** Para mostrar en pantalla. "$3.200" */
 export const formatear = (c: Cent): string => formateador.format(aPesos(c));
+
+/**
+ * Lo que él tipea, a centavos.
+ *
+ * Tolerante a propósito: acepta "3.200", "3200", "$ 3.200" y "3.200,50". En un
+ * celular, parado en la calle, el punto de los miles sale solo y un campo que
+ * rechaza "3.200" es un campo que lo frena.
+ *
+ * El punto se descarta como separador de miles y la coma es la decimal, que es
+ * como se escribe acá. Lo que no se pueda leer vale 0, nunca `NaN`: un NaN se
+ * propaga en silencio por todas las cuentas y aparece mucho después.
+ */
+export const aCentavos = (texto: string): Cent => {
+  const limpio = texto.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
+  const n = Number(limpio);
+  return Number.isFinite(n) && n > 0 ? pesos(n) : 0;
+};

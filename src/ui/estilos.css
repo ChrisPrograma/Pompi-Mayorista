@@ -537,3 +537,51 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
   background:var(--brand-soft);border-radius:6px;padding:0 6px;margin-right:5px;
   vertical-align:baseline;
 }
+
+/* ---------------------------------------------------------------------------
+ * Pago parcial, comprobante y ficha de la venta.
+ *
+ * Va al final del archivo a propósito: el bloque de escritorio (min-width:900px)
+ * está más arriba y las media queries NO suman especificidad, así que una regla
+ * base escrita después de él le ganaría. Nada de acá se pisa allá, pero la regla
+ * del proyecto es esa y conviene no hacer excepciones.
+ * ------------------------------------------------------------------------- */
+
+/* El bloque del pago parcial cuelga de su opción: sangrado y con un filete a la
+   izquierda, para que se lea como "esto es parte de lo que elegiste". */
+.parcial{
+  margin:10px 0 2px 14px;padding:14px 15px;
+  border-left:3px solid var(--brand);
+  background:var(--brand-soft);border-radius:0 var(--r-m) var(--r-m) 0;
+}
+.parcial .campo{margin-bottom:12px}
+.parcial .texto{font-size:22px;font-weight:700;font-family:'Archivo'}
+
+.parcial-cuentas{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.parcial-cuentas>div{
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-s,10px);padding:10px 12px;
+}
+.parcial-cuentas span{display:block;font-size:14px;color:var(--ink-3)}
+.parcial-cuentas b{display:block;font-family:'Archivo';font-size:19px;font-weight:700;margin-top:2px}
+.parcial-cuentas .debe b{color:var(--warn-ink,var(--warn))}
+.parcial-aviso{margin:10px 0 0;font-size:14.5px;color:var(--ink-2);line-height:1.35}
+
+/* Compartir el comprobante. */
+.btn.compartir{display:flex;align-items:center;justify-content:center;gap:9px;margin-top:12px}
+.compartir-nota{
+  margin:9px 0 0;font-size:14px;color:var(--ink-3);
+  text-align:center;line-height:1.35;
+}
+
+/* Las filas de totales de la ficha de una venta. */
+.tot-fila{display:flex;align-items:baseline;gap:12px;padding:5px 0}
+.tot-fila+.tot-fila{border-top:1px solid var(--line);margin-top:4px;padding-top:9px}
+.tot-fila span{font-size:15.5px;color:var(--ink-2)}
+.tot-fila b{margin-left:auto;font-family:'Archivo';font-size:19px;font-weight:700}
+.tot-fila:first-child b{font-size:24px}
+.tot-fila.debe b{color:var(--warn-ink,var(--warn))}
+
+/* La flecha de las ventas de hoy: gris y chica, que se note que se puede tocar
+   sin competir con el importe, que es lo que él mira. */
+.row .ico-arrow{color:var(--ink-3);flex:none}

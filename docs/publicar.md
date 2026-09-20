@@ -1,11 +1,18 @@
 # Publicar la app en línea
 
-**Decidido: Netlify.** Vercel quedó descartado — no se usa y no hace falta. La razón concreta a
-favor de Netlify es **Netlify Drop**: te deja subir la carpeta arrastrándola, sin repositorio y sin
-configurar nada. Es lo que está en línea hoy.
+> **Desactualizado desde el 19/09/2026.** El proyecto ya no está en Netlify: se llegó al límite del
+> plan gratuito y se migró a **Vercel**.
+>
+> **El sitio es https://pompi-mayorista.vercel.app**, compilando solo desde el repositorio de
+> GitHub. Vercel no lee `netlify.toml` ni `_headers`; la configuración que vale es `vercel.json`,
+> en la raíz del proyecto. Subir la carpeta a mano ya no es parte del flujo: se sube el código al
+> repositorio y el deploy sale solo.
+>
+> Lo de abajo se deja como estaba porque documenta cómo se publicó al principio, pero **no es el
+> procedimiento de hoy**.
 
-Netlify da HTTPS gratis, que **no es opcional acá**: sin HTTPS el service worker no se registra y la
-app deja de funcionar sin señal.
+HTTPS **no es opcional acá**: sin HTTPS el service worker no se registra y la app deja de funcionar
+sin señal. Vercel lo da gratis, igual que Netlify.
 
 ---
 

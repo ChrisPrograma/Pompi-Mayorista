@@ -1,7 +1,9 @@
 # Gestión Pompi Mascotas
 
 Sistema de gestión para venta mayorista de accesorios para mascotas: un vendedor que trabaja en la
-calle, sin local, con stock repartido entre su casa y el auto.
+calle, sin local, con un solo stock.
+
+**En línea: https://pompi-mayorista.vercel.app**
 
 **Cómo se ejecuta:** `npm install && npm run dev`. El punto de entrada es `index.html`.
 El ejecutable es la carpeta `dist/` que genera `npm run build`: HTML, CSS, JS y service worker,

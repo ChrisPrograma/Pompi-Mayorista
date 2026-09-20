@@ -6,6 +6,7 @@
  */
 
 import type { Cent } from './money.ts';
+import { diasCalendario } from './fechas.ts';
 import type { PagoCliente, Uuid, Venta } from './types.ts';
 
 export interface SaldoCliente {
@@ -55,11 +56,15 @@ export const saldoCliente = (
   return { clienteId, saldoCent, deudaMasViejaIso, diasAtraso };
 };
 
-export const diasEntre = (desdeIso: string, hastaIso: string): number => {
-  const d = Date.parse(desdeIso);
-  const h = Date.parse(hastaIso);
-  return Math.max(0, Math.floor((h - d) / 86_400_000));
-};
+/**
+ * Cuántos días hace que le deben.
+ *
+ * Días de calendario de acá, no bloques de 24 horas. Antes dividía la
+ * diferencia de milisegundos por un día, y eso decía "0 días" de una venta de
+ * ayer a la tarde mirada hoy a la mañana. Él la cuenta como de ayer.
+ */
+export const diasEntre = (desdeIso: string, hastaIso: string): number =>
+  diasCalendario(desdeIso, hastaIso);
 
 /**
  * Clasificación de una deuda por antigüedad.

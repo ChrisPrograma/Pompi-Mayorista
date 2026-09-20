@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { uuidv7 } from '../lib/uuid.ts';
-import { pesos, type Cent } from '../domain/money.ts';
+import { aCentavos, pesos, type Cent } from '../domain/money.ts';
+import { fechaLarga, fechaYHora, mismoDiaLocal } from '../domain/fechas.ts';
 import type { Uuid } from '../domain/types.ts';
 import {
   activarCliente, activarProducto, activarProveedor, altaCliente, altaProducto, altaProveedor,
@@ -21,8 +22,8 @@ import {
 } from '../data/servidor.ts';
 import { salir, sesionGuardada, type Sesion } from '../data/sesion.ts';
 import { PantallaAcceso } from './ingreso.tsx';
-import { sugerenciasPendientes, vistaDeudas, type ProductoVista } from './vistas.ts';
-import { Alerta, Coach, Exito, Hoja, Icono, plata, type DatosExito } from './componentes.tsx';
+import { reciboDeVenta, sugerenciasPendientes, vistaDeudas, type ProductoVista } from './vistas.ts';
+import { Alerta, BotonCompartir, Coach, Exito, Hoja, Icono, plata, type DatosExito } from './componentes.tsx';
 import { RECORRIDO } from './recorrido.ts';
 import {
   PantallaClientes, PantallaCosas, PantallaDeudas, PantallaHoy,
@@ -59,11 +60,8 @@ const cola = new Cola(almacenCola, transporte);
  * de miles) y la coma es la decimal. Si no queda un número, devuelve 0 y la
  * pantalla no deja guardar — nunca un `NaN` que termine guardado como precio.
  */
-const aCentavos = (texto: string): Cent => {
-  const limpio = texto.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
-  const n = Number(limpio);
-  return Number.isFinite(n) && n > 0 ? pesos(n) : 0;
-};
+/** Cómo se llama el negocio. Va en el encabezado y arriba de cada comprobante. */
+const NEGOCIO = 'Pompi Mayorista';
 
 export const App = () => {
   const [estado, setEstado] = useState<EstadoApp | null>(null);
@@ -78,6 +76,8 @@ export const App = () => {
   const [acceso, setAcceso] = useState<'entrar' | 'registro' | null>(null);
   const [ruta, setRuta] = useState<Ruta>('hoy');
   const [exito, setExito] = useState<DatosExito | null>(null);
+  /** La venta cuyo detalle está abierto, o null. */
+  const [fichaVenta, setFichaVenta] = useState<Uuid | null>(null);
   const [hojaCobro, setHojaCobro] = useState<Uuid | null>(null);
   const [hojaProducto, setHojaProducto] = useState<ProductoVista | null>(null);
   const [hojaPrecios, setHojaPrecios] = useState(false);
@@ -441,40 +441,61 @@ export const App = () => {
 
     verCliente: (id) => setFichaCliente(id),
 
+    verVenta: (id) => setFichaVenta(id),
+
     nuevoProducto: () => { setF({}); setErrorHoja(null); setHojaProdForm({ modo: 'alta' }); },
 
     nuevoProveedor: () => { setF({}); setErrorHoja(null); setHojaProv({ modo: 'alta' }); },
 
     verProveedor: (id) => setFichaProv(id),
 
-    vender: (clienteId, items, forma) => {
+    vender: (clienteId, items, forma, cobradoCent) => {
       const c = ctx();
-      const r = vender(estado, { clienteId, items, formaPago: forma }, c);
+      const r = vender(estado, { clienteId, items, formaPago: forma, cobradoCent }, c);
       const v = r.ventas![0];
       const cliente = estado.clientes.find((x) => x.id === clienteId);
-      const aCuenta = forma === 'cuenta';
+      const quedaDebiendo = Math.max(0, v.totalCent - v.cobradoCent);
+      const unidades = items.reduce((a, i) => a + i.cantidad, 0);
 
+      /*
+       * `p_cobrado_cent` se manda siempre. La función del servidor lo tenía
+       * desde el principio pero la app nunca lo usaba: dejaba que el servidor
+       * dedujera "cuenta → 0, cualquier otra cosa → todo". Con el pago parcial
+       * esa deducción ya no alcanza, y el número que vale es el que él tipeó.
+       */
       void despachar(r, [{
         tipo: 'registrar_venta', id: v.id,
         payload: {
           p_negocio_id: estado.negocioId, p_cliente_id: clienteId,
           p_items: items.map((i) => ({ producto_id: i.productoId, cantidad: i.cantidad })),
-          p_forma_pago: forma, p_fecha: v.fecha, p_lista_id: estado.listaId,
+          p_forma_pago: forma, p_cobrado_cent: v.cobradoCent,
+          p_fecha: v.fecha, p_lista_id: estado.listaId,
         },
       }]);
 
       const saldo = deudas.lista.find((d) => d.clienteId === clienteId)?.saldoCent ?? 0;
+
       setExito({
         titulo: '¡Venta cerrada!',
         monto: plata(v.totalCent),
-        texto: aCuenta
-          ? `Quedó anotado que ${cliente?.nombre} te lo debe. No hace falta que te acuerdes.`
-          : `${cliente?.nombre} te pagó en el momento.`,
-        deltas: aCuenta
-          ? [{ etiqueta: 'Ahora te debe', valor: plata(saldo + v.totalCent) },
-             { etiqueta: 'Productos', valor: `${items.reduce((a, i) => a + i.cantidad, 0)} u.` }]
-          : [{ etiqueta: 'Cobraste', valor: plata(v.totalCent) },
-             { etiqueta: 'Productos', valor: `${items.reduce((a, i) => a + i.cantidad, 0)} u.` }],
+        texto:
+          quedaDebiendo === 0
+            ? `${cliente?.nombre} te pagó todo en el momento.`
+            : v.cobradoCent > 0
+              ? `${cliente?.nombre} te dio una parte. El resto quedó anotado en su cuenta.`
+              : `Quedó anotado que ${cliente?.nombre} te lo debe. No hace falta que te acuerdes.`,
+        deltas:
+          quedaDebiendo === 0
+            ? [{ etiqueta: 'Cobraste', valor: plata(v.cobradoCent) },
+               { etiqueta: 'Productos', valor: `${unidades} u.` }]
+            : v.cobradoCent > 0
+              ? [{ etiqueta: 'Cobraste', valor: plata(v.cobradoCent) },
+                 { etiqueta: 'Ahora te debe', valor: plata(saldo + quedaDebiendo) }]
+              : [{ etiqueta: 'Ahora te debe', valor: plata(saldo + quedaDebiendo) },
+                 { etiqueta: 'Productos', valor: `${unidades} u.` }],
+        // La venta ya está aplicada al estado, pero `estado` en esta función es
+        // el de antes: el recibo se arma con la venta, que se basta sola.
+        recibo: reciboDeVenta(estado, v, NEGOCIO),
       });
       setClientePre(null);
       setRuta('hoy');
@@ -888,9 +909,9 @@ export const App = () => {
           <div className="brand">
             <div className="brand-mark"><Icono id="i-paw" /></div>
             <div>
-              <div className="brand-name">Pompi Mayorista</div>
+              <div className="brand-name">{NEGOCIO}</div>
               <div className="brand-sub">
-                {new Date(hoy).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                {fechaLarga(hoy)}
               </div>
             </div>
           </div>
@@ -912,10 +933,15 @@ export const App = () => {
         <div className="hud-money" data-tour="resumen">
           <div className="mtile hot">
             <span>Cobré hoy</span>
+            {/*
+              * El día es el de acá, no el de UTC: ver `src/domain/fechas.ts`.
+              * Comparando el texto ISO, a las 21 hs este número se le ponía en
+              * cero mientras todavía estaba vendiendo.
+              */}
             <b className="num">{plata(
-              estado.ventas.filter((v) => v.fecha.slice(0, 10) === hoy.slice(0, 10))
+              estado.ventas.filter((v) => mismoDiaLocal(v.fecha, hoy))
                 .reduce((a, v) => a + v.cobradoCent, 0) +
-              estado.pagos.filter((p) => p.fecha.slice(0, 10) === hoy.slice(0, 10))
+              estado.pagos.filter((p) => mismoDiaLocal(p.fecha, hoy))
                 .reduce((a, p) => a + p.montoCent, 0),
             )}</b>
           </div>
@@ -1167,6 +1193,68 @@ export const App = () => {
             </button>
             <button className="btn outline block" style={{ marginTop: 9 }}
               onClick={() => setHojaCliente(null)}>Cancelar</button>
+          </Hoja>
+        );
+      })()}
+
+      {/* ---------------------------------------------------------------
+        * El detalle de una venta ya hecha.
+        *
+        * Se arma desde la venta guardada, con sus precios congelados: es lo que
+        * pasó, no lo que pasaría si la hiciera hoy. Desde acá vuelve a salir el
+        * comprobante, que es lo que le van a pedir dos días después por WhatsApp.
+        * --------------------------------------------------------------- */}
+      {fichaVenta && (() => {
+        const v = estado.ventas.find((x) => x.id === fichaVenta);
+        if (!v) return null;
+        const cliente = estado.clientes.find((c) => c.id === v.clienteId);
+        const debe = Math.max(0, v.totalCent - v.cobradoCent);
+        const estadoCobro = debe === 0 ? 'Cobrado' : v.cobradoCent > 0 ? 'Pago parcial' : 'Queda en cuenta';
+
+        return (
+          <Hoja alCerrar={() => setFichaVenta(null)}>
+            <h3>{cliente?.nombre ?? 'Venta'}</h3>
+            <p className="sub">{fechaYHora(v.fecha)} · {estadoCobro}</p>
+
+            <div className="stack" style={{ marginTop: 12 }}>
+              {v.items.map((it) => {
+                const p = estado.productos.find((x) => x.id === it.productoId);
+                return (
+                  <div className="row" key={it.id}>
+                    <span className="row-main">
+                      <b>
+                        {p?.codigo && <span className="cod">{p.codigo}</span>}
+                        {p?.nombre ?? 'Producto'}
+                      </b>
+                      <span>{it.cantidad} × {plata(it.precioUnitarioCent)}</span>
+                    </span>
+                    <span className="row-end">
+                      <b>{plata(it.precioUnitarioCent * it.cantidad)}</b>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="card" style={{ marginTop: 12 }}>
+              <div className="tot-fila">
+                <span style={{ fontWeight: 700 }}>Total</span>
+                <b className="num">{plata(v.totalCent)}</b>
+              </div>
+              <div className="tot-fila">
+                <span>Pagó</span>
+                <b className="num">{plata(v.cobradoCent)}</b>
+              </div>
+              {debe > 0 && (
+                <div className="tot-fila debe">
+                  <span>Queda debiendo</span>
+                  <b className="num">{plata(debe)}</b>
+                </div>
+              )}
+            </div>
+
+            <BotonCompartir datos={reciboDeVenta(estado, v, NEGOCIO)} secundario />
+            <button className="btn block" onClick={() => setFichaVenta(null)}>Cerrar</button>
           </Hoja>
         );
       })()}

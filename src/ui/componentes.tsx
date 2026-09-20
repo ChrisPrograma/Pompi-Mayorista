@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { formatear, type Cent } from '../domain/money.ts';
+import { compartirArchivo, reciboComoArchivo, type DatosRecibo } from './recibo.ts';
 
 export const Icono = ({ id, clase = '' }: { id: string; clase?: string }) => (
   <svg className={`ico ${clase}`} aria-hidden="true">
@@ -33,7 +34,58 @@ export interface DatosExito {
   texto: string;
   deltas: { etiqueta: string; valor: string }[];
   extra?: ReactNode;
+  /** Si viene, aparece el botón para mandarle el comprobante al comercio. */
+  recibo?: DatosRecibo;
 }
+
+/**
+ * "Compartir comprobante".
+ *
+ * El archivo se genera al montar el botón y no al tocarlo, y eso no es un
+ * capricho: Safari exige que `navigator.share` salga directamente del toque del
+ * usuario, y si en el medio hay un `await` para dibujar la imagen, cancela el
+ * menú sin decir nada. Teniéndolo hecho de antes, el toque comparte y listo.
+ *
+ * Dibujar el recibo son unos milisegundos, así que hacerlo de más —por ejemplo
+ * si nunca lo comparte— no le cuesta nada a nadie.
+ */
+export const BotonCompartir = ({ datos, secundario = false }: { datos: DatosRecibo; secundario?: boolean }) => {
+  const [archivo, setArchivo] = useState<File | null>(null);
+  const [estado, setEstado] = useState<'listo' | 'mandando' | 'descargado' | 'error'>('listo');
+
+  useEffect(() => {
+    let vivo = true;
+    reciboComoArchivo(datos)
+      .then((f) => { if (vivo) setArchivo(f); })
+      .catch(() => { if (vivo) setEstado('error'); });
+    return () => { vivo = false; };
+  }, [datos]);
+
+  if (estado === 'error') {
+    return <p className="compartir-nota">No se pudo armar el comprobante en este navegador.</p>;
+  }
+
+  return (
+    <>
+      <button className={`btn ${secundario ? 'outline' : 'accent'} block compartir`}
+        disabled={!archivo || estado === 'mandando'}
+        onClick={async () => {
+          if (!archivo) return;
+          setEstado('mandando');
+          const r = await compartirArchivo(archivo, `Comprobante · ${datos.cliente}`);
+          setEstado(r === 'descargado' ? 'descargado' : 'listo');
+        }}>
+        <Icono id="i-share" clase="ico-s" />
+        {archivo ? 'Compartir comprobante' : 'Preparando…'}
+      </button>
+      {estado === 'descargado' && (
+        <p className="compartir-nota" role="status">
+          Se bajó la imagen a tu computadora. Arrastrala al chat de WhatsApp.
+        </p>
+      )}
+    </>
+  );
+};
 
 export const Exito = ({ datos, alCerrar }: { datos: DatosExito; alCerrar: () => void }) => (
   <div className="exito" role="status">
@@ -47,6 +99,7 @@ export const Exito = ({ datos, alCerrar }: { datos: DatosExito; alCerrar: () => 
       ))}
     </div>
     {datos.extra}
+    {datos.recibo && <BotonCompartir datos={datos.recibo} />}
     <button className="btn lg" onClick={alCerrar}>Listo</button>
   </div>
 );

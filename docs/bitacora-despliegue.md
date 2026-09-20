@@ -9,8 +9,9 @@ Registro cronológico de qué se hizo, cuándo, y qué falló. Todo lo que toca 
 
 ## Estado en una línea
 
-**La app está en línea en https://pompi-mayorista.netlify.app**, con el CRUD completo de
-productos, clientes y proveedores, el recorrido guiado de 15 pasos y la pantalla de entrar /
+**La app está en línea en https://pompi-mayorista.vercel.app** (hasta el 19/09/2026 estuvo en
+`pompi-mayorista.netlify.app`; se migró al llegar al límite del plan gratuito). Con el CRUD completo de
+productos, clientes y proveedores, el recorrido guiado de 14 pasos y la pantalla de entrar /
 crear cuenta.
 
 **El repositorio está conectado a Netlify** y cada cambio en `main` dispara un build.

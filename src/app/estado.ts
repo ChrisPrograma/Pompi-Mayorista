@@ -575,13 +575,31 @@ export const activarProveedor = (e: EstadoApp, id: Uuid, activo: boolean): Resul
   return { proveedores: [{ ...actual, activo }] };
 };
 
-/** Vender: una venta, sus líneas con precio y costo congelados, y la salida del auto. */
+/**
+ * Vender: una venta, sus líneas con precio y costo congelados, y la salida de stock.
+ *
+ * CUÁNTO SE COBRÓ
+ *
+ * Lo que decide si es deuda no es la forma de pago: es `cobradoCent`. La deuda
+ * de un comercio es la suma de `total - cobrado` de sus ventas menos sus pagos,
+ * así que un pago parcial no necesita ninguna tabla nueva ni ningún campo
+ * nuevo — es una venta con `cobradoCent` en el medio. Por eso las tres opciones
+ * que ve él ("me paga el total", "me paga una parte", "me lo debe todo") no
+ * cambiaron una sola columna de la base.
+ *
+ * `cobradoCent` se recorta contra el total a propósito: si por un error de tipeo
+ * entra un número más grande que la venta, se cobra la venta y nada más. Un
+ * cobrado mayor que el total daría una deuda negativa, o sea que el sistema le
+ * estaría diciendo que él le debe plata al comercio.
+ */
 export const vender = (
   e: EstadoApp,
   args: {
     clienteId: Uuid;
     items: { productoId: Uuid; cantidad: number }[];
     formaPago: Venta['formaPago'];
+    /** Cuánto entregó. Si no viene: todo, salvo que la venta sea a cuenta. */
+    cobradoCent?: Cent;
   },
   ctx: Ctx,
 ): Resultado => {
@@ -606,7 +624,11 @@ export const vender = (
   });
 
   const totalCent = lineas.reduce((a, l) => a + porCantidad(l.precioUnitarioCent, l.cantidad), 0);
-  const cobradoCent = args.formaPago === 'cuenta' ? 0 : totalCent;
+
+  const cobradoCent =
+    args.cobradoCent !== undefined
+      ? Math.max(0, Math.min(args.cobradoCent, totalCent))
+      : args.formaPago === 'cuenta' ? 0 : totalCent;
 
   const venta: Venta = {
     id: ventaId,
