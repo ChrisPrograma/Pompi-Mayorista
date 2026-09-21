@@ -28,7 +28,7 @@ import { salir, sesionGuardada, type Sesion } from '../data/sesion.ts';
 import { PantallaAcceso } from './ingreso.tsx';
 import {
   caballitoDeBatalla, productosDelProveedor, reciboDeVenta, sugerenciasPendientes,
-  vistaDeudas, vistaIngresos, vistaProductos,
+  ventasDelCliente, vistaDeudas, vistaIngresos, vistaProductos,
   type ProductoVista,
 } from './vistas.ts';
 import {
@@ -1158,6 +1158,40 @@ export const App = () => {
               </button>
             ))}
           </div>
+          {/*
+            * De qué ventas viene esa deuda.
+            *
+            * Es la pregunta que hace el comercio cuando le dicen un número:
+            * "¿de qué?". Cada una abre su detalle, con el comprobante para
+            * volver a mandárselo — que suele ser lo que destraba el cobro.
+            */}
+          {(() => {
+            const pendientes = ventasDelCliente(estado, clienteCobro.clienteId, 4)
+              .filter((x) => x.debeCent > 0);
+            if (pendientes.length === 0) return null;
+            return (
+              <>
+                <p className="eyebrow">De qué viene · tocá para el comprobante</p>
+                <div className="stack" style={{ marginBottom: 16 }}>
+                  {pendientes.map((x) => (
+                    <button className="row" key={x.id}
+                      onClick={() => { setHojaCobro(null); setFichaVenta(x.id); }}>
+                      <span className="row-main">
+                        <b>{x.cuando}</b>
+                        <span>{x.unidades} u. de {plata(x.totalCent)}</span>
+                      </span>
+                      <span className="row-end">
+                        <b>{plata(x.debeCent)}</b>
+                        <span>debe</span>
+                      </span>
+                      <Icono id="i-arrow" clase="ico-s ico-arrow" />
+                    </button>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
+
           <button className="btn lg block" onClick={() => {
             const v = Number(montoCobro.current?.value ?? 0);
             if (v > 0) confirmarCobro(clienteCobro.clienteId, Math.min(pesos(v), clienteCobro.saldoCent));
@@ -1647,6 +1681,7 @@ export const App = () => {
         const d = deudas.lista.find((x) => x.clienteId === c.id);
         const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
         const caballito = caballitoDeBatalla(estado, c.id);
+        const ventasCliente = ventasDelCliente(estado, c.id);
         return (
           <Hoja alCerrar={() => setFichaCliente(null)}>
             <h3>{c.nombre}</h3>
@@ -1693,6 +1728,42 @@ export const App = () => {
                 </span>
               )}
             </div>
+
+            {/*
+              * Sus últimas ventas, con el comprobante adentro.
+              *
+              * Hasta ahora la única puerta al detalle de una venta era "Lo que
+              * vendiste hoy": la venta de ayer no se podía abrir, y el
+              * "mandámelo de nuevo" de dos días después no tenía respuesta.
+              * Desde acá se llega a cualquiera.
+              */}
+            {ventasCliente.length > 0 && (
+              <>
+                <p className="eyebrow" style={{ marginTop: 14 }}>
+                  Sus últimas ventas · tocá para el comprobante
+                </p>
+                <div className="stack">
+                  {ventasCliente.map((x) => (
+                    <button className={`row ${x.anulada ? 'anulada' : ''}`} key={x.id}
+                      onClick={() => { setFichaCliente(null); setFichaVenta(x.id); }}>
+                      <span className="thumb"><Icono id="i-cart" /></span>
+                      <span className="row-main">
+                        <b>{x.cuando}</b>
+                        <span>{x.unidades} u.{x.anulada ? ' · anulada' : ''}</span>
+                      </span>
+                      <span className="row-end">
+                        <b>{plata(x.totalCent)}</b>
+                        <span>
+                          {x.anulada ? 'anulada'
+                            : x.debeCent > 0 ? `debe ${plata(x.debeCent)}` : 'cobrada'}
+                        </span>
+                      </span>
+                      <Icono id="i-arrow" clase="ico-s ico-arrow" />
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
             {d && (
               <button className="btn lg block" style={{ marginTop: 14 }}

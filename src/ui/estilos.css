@@ -311,14 +311,24 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
   position:fixed;left:0;right:0;bottom:0;z-index:80;
   max-width:520px;margin:0 auto;
   background:var(--ink);color:var(--ground);border-radius:18px;
-  padding:14px 15px;margin-bottom:12px;
+  padding:16px 17px;margin-bottom:12px;
   box-shadow:var(--shadow-l);display:none;
 }
 @media (min-width:544px){ .coach{max-width:496px} }
 .coach.on{display:block;animation:up .3s cubic-bezier(.2,.85,.25,1)}
-.coach .ceyebrow{font-size:11px;letter-spacing:.1em;text-transform:uppercase;opacity:.6;font-weight:700}
-.coach h4{font-family:'Archivo';font-size:16.5px;font-weight:700;margin:3px 0 4px}
-.coach p{margin:0;font-size:13.6px;line-height:1.42;opacity:.92}
+/*
+ * Tipografía del recorrido, subida a pedido del cliente.
+ *
+ * Venía en 13,6 px y sin negrita, que sobre el fondo oscuro de la tarjeta se le
+ * hacía chico. El texto pasa a 18 px —el equivalente en pantalla a un Arial 14
+ * de imprenta— y en negrita, y el título y el "paso N de M" acompañan para que
+ * la jerarquía no se pierda. La familia sigue siendo la de la app: cambiarla a
+ * Arial solo acá metería una tercera tipografía en la única pantalla que se usa
+ * para aprender a usar el resto.
+ */
+.coach .ceyebrow{font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;opacity:.7;font-weight:700}
+.coach h4{font-family:'Archivo';font-size:20px;font-weight:700;margin:4px 0 6px}
+.coach p{margin:0;font-size:18px;font-weight:700;line-height:1.38;opacity:.96}
 .coach-foot{display:flex;align-items:center;gap:10px;margin-top:13px}
 .coach-dots{display:flex;gap:4px;flex:1;flex-wrap:wrap}
 /* La tarjeta es var(--ink) con texto var(--ground), así que los puntos apagados
@@ -327,8 +337,8 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
    especificidad que `.on`, y por eso los puntos no marcaban el avance. */
 .coach-dots i{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.3}
 .coach-dots i.on{background:var(--accent);opacity:1}
-.coach .btn{padding:9px 15px;font-size:14px;border-radius:11px}
-.coach .link{font-size:13px;opacity:.7;text-decoration:underline;text-underline-offset:3px;color:inherit}
+.coach .btn{padding:10px 17px;font-size:15.5px;border-radius:11px}
+.coach .link{font-size:14.5px;opacity:.7;text-decoration:underline;text-underline-offset:3px;color:inherit}
 
 .tour-target{
   position:relative;z-index:55;

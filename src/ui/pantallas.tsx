@@ -214,7 +214,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
         <Icono id="i-arrow" clase="ico-arrow" />
       </button>
 
-      <button className="second-action" onClick={() => acc.ir('ingreso')}>
+      <button className="second-action" data-tour="me-llego" onClick={() => acc.ir('ingreso')}>
         <span className="circ"><Icono id="i-inbox" /></span>
         <span><b>Me llegó mercadería</b><span>Cargás lo que te trajo el proveedor</span></span>
         <Icono id="i-arrow" clase="ico-arrow ico-s" />
@@ -303,7 +303,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
             <h2>Lo que vendiste hoy</h2>
             <span className="hint">{plata(v.vendidoHoyCent)}</span>
           </div>
-          <div className="stack">
+          <div className="stack" data-tour="ventas-hoy">
             {/*
               * Cada venta es un botón: tocándola se abre el detalle con los
               * productos y el botón para volver a mandar el comprobante. Es el
@@ -346,7 +346,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
             <h2>Lo que ingresó hoy</h2>
             <span className="hint">{plata(v.ingresadoHoyCent)}</span>
           </div>
-          <div className="stack">
+          <div className="stack" data-tour="ingresos-hoy">
             {v.ingresosDeHoy.map((x) => (
               <button className={`row ${x.anulada ? 'anulada' : ''}`} key={x.id}
                 onClick={() => acc.verIngreso(x.id)}>
@@ -391,7 +391,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
             <h2>Anulado en {nombreDelMes(hoy)}</h2>
             <span className="hint">{v.anuladasDelMes.length}</span>
           </div>
-          <div className="stack">
+          <div className="stack" data-tour="anulado-mes">
             {v.anuladasDelMes.map((x) => (
               <button className="row anulada" key={x.id}
                 onClick={() => (x.tipo === 'venta' ? acc.verVenta(x.id) : acc.verIngreso(x.id))}>
@@ -750,7 +750,7 @@ export const PantallaCosas = ({ estado, acc }: Props) => {
       )}
 
       <div className="section-h"><h2>Mis cosas</h2><span className="hint">todo lo tuyo, ordenado</span></div>
-      <div className="hub">
+      <div className="hub" data-tour="hub">
         <button onClick={() => acc.ir('ingreso')}>
           <span className="thumb"><Icono id="i-inbox" /></span>
           <b>Me llegó mercadería</b><span>Entrás lo que te trajo el proveedor</span>
@@ -827,10 +827,12 @@ export const PantallaProductos = ({ estado, acc }: Props) => {
       </button>
 
       {(todos.length > 1 || q) && (
-        <Barra opciones={ORDENES_PRODUCTO} valor={orden} alCambiar={cambiarOrden}
-          direccion={dir} alInvertir={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
-          busqueda={q} alBuscar={setQ} ejemplo="Buscar por código, nombre o rubro"
-          cuantos={productos.length} total={todos.length} />
+        <div data-tour="buscador">
+          <Barra opciones={ORDENES_PRODUCTO} valor={orden} alCambiar={cambiarOrden}
+            direccion={dir} alInvertir={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+            busqueda={q} alBuscar={setQ} ejemplo="Buscar por código, nombre o rubro"
+            cuantos={productos.length} total={todos.length} />
+        </div>
       )}
 
       <div className="stack" data-tour="lista-productos-todos">
@@ -1068,7 +1070,7 @@ export const PantallaProveedores = ({ estado, acc }: Props) => {
           cuantos={lista.length} total={v.lista.length} />
       )}
 
-      <div className="stack">
+      <div className="stack" data-tour="lista-proveedores-todos">
         {lista.length === 0 && (
           <Alerta tipo="ok" icono="i-store" titulo="Todavía no cargaste proveedores"
             texto="Con el nombre alcanza. Sirven para saber a quién le debés y de dónde vino cada producto."

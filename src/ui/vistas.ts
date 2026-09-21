@@ -14,7 +14,8 @@ import {
   clasificar, diasEntre, productoMasComprado, saldoCliente, type Antiguedad,
 } from '../domain/saldos.ts';
 import {
-  diaDeSemanaLocal, diaLocal, diaLocalDesplazado, horaLocal, mismoDiaLocal, mismoMesLocal,
+  diaDeSemanaLocal, diaLocal, diaLocalDesplazado, fechaCorta, horaLocal,
+  mismoDiaLocal, mismoMesLocal,
 } from '../domain/fechas.ts';
 import { calcularStock } from '../domain/stock.ts';
 import type { Compra, Uuid, Venta } from '../domain/types.ts';
@@ -565,4 +566,54 @@ export const sugerenciasPendientes = (e: EstadoApp) =>
     .map((s) => ({
       ...s,
       nombre: e.productos.find((p) => p.id === s.productoId)?.nombre ?? '—',
+    }));
+
+/** Una venta en una lista: lo justo para reconocerla y abrir su comprobante. */
+export interface VentaDeClienteVista {
+  id: Uuid;
+  fecha: string;
+  /** Día y hora de acá, para mostrar. */
+  cuando: string;
+  totalCent: Cent;
+  cobradoCent: Cent;
+  /** Lo que todavía falta cobrar de ESA venta. Cero si está anulada. */
+  debeCent: Cent;
+  unidades: number;
+  anulada: boolean;
+}
+
+/**
+ * Las últimas ventas de un comercio.
+ *
+ * Existe por un pedido concreto: el comprobante solo se podía mandar el mismo
+ * día. La única puerta al detalle de una venta era "Lo que vendiste hoy", así
+ * que la venta de ayer no tenía forma de abrirse y el "mandámelo de nuevo" de
+ * dos días después quedaba sin respuesta. Desde acá la ficha del comercio y la
+ * hoja de cobro llegan a cualquier venta, y adentro está el mismo botón de
+ * siempre.
+ *
+ * Las anuladas vienen marcadas y NO se esconden: él tiene que poder ver qué
+ * anuló. El detalle es el que decide no ofrecer el comprobante de una anulada.
+ */
+export const ventasDelCliente = (
+  e: EstadoApp,
+  clienteId: Uuid,
+  limite = 6,
+): VentaDeClienteVista[] =>
+  e.ventas
+    .filter((v) => v.clienteId === clienteId)
+    .slice()
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))
+    .slice(0, limite)
+    .map((v) => ({
+      id: v.id,
+      fecha: v.fecha,
+      cuando: `${fechaCorta(v.fecha)} · ${horaLocal(v.fecha)}`,
+      totalCent: v.totalCent,
+      cobradoCent: v.cobradoCent,
+      // Una venta anulada ya no se le cobra a nadie: mostrar su saldo sería
+      // decir que todavía debe una plata que el sistema ya no le reclama.
+      debeCent: v.anuladaEn ? 0 : Math.max(0, v.totalCent - v.cobradoCent),
+      unidades: v.items.reduce((a, i) => a + i.cantidad, 0),
+      anulada: Boolean(v.anuladaEn),
     }));

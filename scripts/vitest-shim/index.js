@@ -79,6 +79,14 @@ export function expect(real) {
     toEqual: (esp) => assert.notDeepStrictEqual(real, esp),
     toBeNull: () => assert.notStrictEqual(real, null),
     toThrow: () => assert.doesNotThrow(real),
+    // Lo usa el test que verifica que el recorrido no nombre funciones que ya
+    // no existen. Sin esto, `expect(...).not.toContain` no era una función y el
+    // test fallaba por el shim, no por el código.
+    toContain: (x) => assert.ok(!real.includes(x), `no debería contener ${x}`),
+    toMatch: (re) => assert.ok(
+      !(re instanceof RegExp ? re.test(real) : String(real).includes(re)),
+      `"${real}" no debería coincidir con ${re}`,
+    ),
   };
 
   return api;
