@@ -216,16 +216,16 @@ describe('los ingresos del día', () => {
     const { e1, compra } = conCompra();
     const v1 = vistaHoy(e1, HOY);
 
-    expect(v1.ingresosDeHoy.some((i) => i.id === compra.id)).toBe(true);
-    expect(v1.ingresadoHoyCent).toBe(compra.totalCent);
+    expect(v1.ingresosDelRango.some((i) => i.id === compra.id)).toBe(true);
+    expect(v1.ingresadoDelRangoCent).toBe(compra.totalCent);
 
     const e2 = aplicar(e1, anularCompra(e1, compra.id, ctx('b')));
     const v2 = vistaHoy(e2, HOY);
 
     // Sale de la lista del día y pasa al bloque de anuladas del mes.
-    expect(v2.ingresosDeHoy.find((i) => i.id === compra.id)).toBeUndefined();
-    expect(v2.anuladasDelMes.some((i) => i.id === compra.id)).toBe(true);
-    expect(v2.ingresadoHoyCent).toBe(0);
+    expect(v2.ingresosDelRango.find((i) => i.id === compra.id)).toBeUndefined();
+    expect(v2.anuladasDelRango.some((i) => i.id === compra.id)).toBe(true);
+    expect(v2.ingresadoDelRangoCent).toBe(0);
   });
 });
 
@@ -348,7 +348,7 @@ describe('anular una venta', () => {
     const enRuta = v2.ruta.find((r) => r.clienteId === 'c1');
     if (enRuta) expect(enRuta.visitado).toBe(false);
     expect(v2.ventasDeHoy.find((x) => x.id === venta.id)).toBeUndefined();
-    expect(v2.anuladasDelMes.some((x) => x.id === venta.id)).toBe(true);
+    expect(v2.anuladasDelRango.some((x) => x.id === venta.id)).toBe(true);
   });
 
   it('sigue en la lista del día, marcada, pero sin sumar en el total', () => {
@@ -362,7 +362,7 @@ describe('anular una venta', () => {
     const v2 = vistaHoy(e2, HOY);
     // Ya no está entre las del día: pasó al bloque de anuladas del mes.
     expect(v2.ventasDeHoy.find((x) => x.id === venta.id)).toBeUndefined();
-    const fila = v2.anuladasDelMes.find((x) => x.id === venta.id)!;
+    const fila = v2.anuladasDelRango.find((x) => x.id === venta.id)!;
 
     // Se ve, con su importe entero.
     expect(fila.totalCent).toBe(venta.totalCent);
@@ -435,15 +435,15 @@ describe('las anulaciones del mes en el inicio', () => {
     const { e2, venta } = anular();
     // Se anuló el 15/09. Mirado el 28/09, sigue a la vista.
     const v = vistaHoy(e2, '2026-09-28T14:00:00.000Z');
-    expect(v.anuladasDelMes.map((x) => x.id)).toContain(venta.id);
-    expect(v.anuladasDelMes[0].tipo).toBe('venta');
+    expect(v.anuladasDelRango.map((x) => x.id)).toContain(venta.id);
+    expect(v.anuladasDelRango[0].tipo).toBe('venta');
   });
 
   it('el 1° del mes siguiente desaparece sola, sin borrar nada', () => {
     const { e2, venta } = anular();
     const v = vistaHoy(e2, '2026-10-01T14:00:00.000Z');
 
-    expect(v.anuladasDelMes).toEqual([]);
+    expect(v.anuladasDelRango).toEqual([]);
     // Pero el dato sigue entero: no se borró, solo dejó de mostrarse.
     const guardada = e2.ventas.find((x) => x.id === venta.id)!;
     expect(guardada.anuladaEn).toBe(HOY);
@@ -465,9 +465,9 @@ describe('las anulaciones del mes en el inicio', () => {
 
     // Se anula en septiembre.
     const anulada = aplicar(enAgosto, anularVenta(enAgosto, venta.id, ctx('se')));
-    expect(vistaHoy(anulada, HOY).anuladasDelMes.map((x) => x.id)).toContain(venta.id);
+    expect(vistaHoy(anulada, HOY).anuladasDelRango.map((x) => x.id)).toContain(venta.id);
     // Y en octubre ya no.
-    expect(vistaHoy(anulada, '2026-10-05T14:00:00.000Z').anuladasDelMes).toEqual([]);
+    expect(vistaHoy(anulada, '2026-10-05T14:00:00.000Z').anuladasDelRango).toEqual([]);
   });
 
   it('junta ventas e ingresos, de lo último anulado a lo más viejo', () => {
@@ -489,7 +489,7 @@ describe('las anulaciones del mes en el inicio', () => {
     const a2 = aplicar(a1, anularVenta(a1, venta.id,
       { nuevoId: idsSecuenciales('y'), ahora: () => '2026-09-17T10:00:00.000Z' }));
 
-    const lista = vistaHoy(a2, '2026-09-20T14:00:00.000Z').anuladasDelMes;
+    const lista = vistaHoy(a2, '2026-09-20T14:00:00.000Z').anuladasDelRango;
     expect(lista).toHaveLength(2);
     // Lo último anulado, primero.
     expect(lista[0].tipo).toBe('venta');
@@ -498,6 +498,6 @@ describe('las anulaciones del mes en el inicio', () => {
 
   it('si no anuló nada, el bloque no existe', () => {
     const { e1 } = conVenta('efectivo');
-    expect(vistaHoy(e1, HOY).anuladasDelMes).toEqual([]);
+    expect(vistaHoy(e1, HOY).anuladasDelRango).toEqual([]);
   });
 });

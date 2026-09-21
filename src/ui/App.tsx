@@ -27,7 +27,7 @@ import {
 import { salir, sesionGuardada, type Sesion } from '../data/sesion.ts';
 import { PantallaAcceso } from './ingreso.tsx';
 import {
-  caballitoDeBatalla, productosDelProveedor, reciboDeVenta, sugerenciasPendientes,
+  caballitoDeBatalla, productosDelProveedor, reciboDeIngreso, reciboDeVenta, sugerenciasPendientes,
   ventasDelCliente, vistaDeudas, vistaIngresos, vistaProductos,
   type ProductoVista,
 } from './vistas.ts';
@@ -1533,11 +1533,17 @@ export const App = () => {
             </div>
 
             {/*
-              * Sin comprobante si está anulada. Mandarle a un comercio el
-              * comprobante de una venta que se dio de baja sería peor que no
-              * mandarle nada: figura un total que él ya no le va a cobrar.
+              * El comprobante se puede mandar SIEMPRE, incluso anulado, y eso es
+              * un cambio de criterio a pedido del cliente.
+              *
+              * Antes no se ofrecía, con un buen motivo: mandar el comprobante de
+              * una venta dada de baja es peor que no mandar nada. Lo que faltaba
+              * era la otra mitad del caso — si ya le mandó el comprobante y
+              * después anuló la venta, tiene que poder avisarle. El comprobante
+              * anulado lleva una banda roja arriba de todo que lo dice antes que
+              * cualquier importe, así que no se puede confundir con uno vigente.
               */}
-            {!v.anuladaEn && <BotonCompartir datos={reciboDeVenta(estado, v, NEGOCIO)} secundario />}
+            <BotonCompartir datos={reciboDeVenta(estado, v, NEGOCIO)} secundario />
             <button className="btn block" style={{ marginTop: v.anuladaEn ? 12 : 8 }}
               onClick={() => setFichaVenta(null)}>Cerrar</button>
 
@@ -1664,13 +1670,22 @@ export const App = () => {
             </div>
 
             {/*
+              * El comprobante de la entrada. Sirve para dos cosas de verdad:
+              * mandarle al proveedor lo que él anotó —"esto es lo que me
+              * llegó"— y, si la anuló o la corrigió, avisarle que la anterior
+              * quedó sin efecto. Los importes de este comprobante son de COSTO,
+              * no de venta.
+              */}
+            <BotonCompartir datos={reciboDeIngreso(estado, c, NEGOCIO)} secundario />
+
+            {/*
               * Corregir va ANTES que anular, y no es un detalle de orden: de las
               * dos, corregir es casi siempre la que quiere. Cargó 100 donde iban
               * 10, o puso mal un costo; anular a secas lo deja con el stock
               * arreglado pero sin la entrada que de verdad ocurrió.
               */}
             {!c.anuladaEn && (
-              <button className="btn outline block" style={{ marginTop: 12 }}
+              <button className="btn outline block" style={{ marginTop: 8 }}
                 onClick={() => acc.corregirIngreso(c.id)}>
                 Corregir este ingreso
               </button>

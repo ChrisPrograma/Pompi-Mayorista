@@ -14,8 +14,8 @@ import {
   clasificar, diasEntre, productoMasComprado, saldoCliente, type Antiguedad,
 } from '../domain/saldos.ts';
 import {
-  diaDeSemanaLocal, diaLocal, diaLocalDesplazado, fechaCorta, horaLocal,
-  mismoDiaLocal, mismoMesLocal,
+  dentroDelRango, diaDeSemanaLocal, diaLocal, diaLocalDesplazado, fechaCorta, horaLocal,
+  mismoDiaLocal, type Rango,
 } from '../domain/fechas.ts';
 import { calcularStock } from '../domain/stock.ts';
 import type { Compra, Uuid, Venta } from '../domain/types.ts';
@@ -32,7 +32,7 @@ const mismoDia = mismoDiaLocal;
 
 /**
  * Una venta anulada no cuenta para ningún número, y tampoco aparece entre las
- * del día: tiene su propio bloque, `anuladasDelMes`.
+ * del día: tiene su propio bloque, `anuladasDelRango`.
  *
  * No suma en la caja del día, ni en la ganancia, ni en la deuda del comercio, ni
  * cuenta como "hoy hiciste una venta". La deuda y la ganancia están protegidas
@@ -75,9 +75,15 @@ export interface VistaHoy {
     estado: 'cobrado' | 'parcial' | 'debe';
     items: number;
   }[];
-  /** Las compras del día. */
-  ingresosDeHoy: IngresoVista[];
-  ingresadoHoyCent: Cent;
+  /**
+   * Las entradas de mercadería del rango elegido (por defecto, el mes).
+   *
+   * Era "del día" y se quedaba corto: una entrada se revisa cuando llega la
+   * factura del proveedor, que puede ser una semana después. El rango lo elige
+   * él desde la pantalla y no recarga nada — es la misma vista, recalculada.
+   */
+  ingresosDelRango: IngresoVista[];
+  ingresadoDelRangoCent: Cent;
   /**
    * Lo anulado en el MES calendario en curso, ventas e ingresos juntos.
    *
@@ -90,7 +96,9 @@ export interface VistaHoy {
    * septiembre, sin que nadie toque nada y sin que se borre un solo dato: la
    * venta anulada sigue entera en su ficha y en la base.
    */
-  anuladasDelMes: AnulacionVista[];
+  anuladasDelRango: AnulacionVista[];
+  /** El rango con el que se armó esta vista, para que la pantalla lo muestre. */
+  rango: Rango;
   /**
    * El día en dos pasos. Era en tres: el tercero era dejar el auto cargado, y se
    * fue junto con el auto.
@@ -114,6 +122,8 @@ export interface AnulacionVista {
 export interface IngresoVista {
   id: Uuid;
   proveedor: string;
+  /** El día de la entrada. Con el rango en semana o mes, la hora sola no ubica. */
+  fecha: string;
   hora: string;
   totalCent: Cent;
   condicionPago: 'contado' | 'cuenta';
@@ -140,6 +150,7 @@ export const vistaIngresos = (e: EstadoApp, compras: Compra[]): IngresoVista[] =
       proveedor: c.proveedorId
         ? e.proveedores.find((p) => p.id === c.proveedorId)?.nombre ?? '—'
         : 'Sin proveedor',
+      fecha: c.fecha,
       hora: horaLocal(c.fecha),
       totalCent: c.totalCent,
       condicionPago: c.condicionPago,
@@ -158,9 +169,13 @@ export const vistaIngresos = (e: EstadoApp, compras: Compra[]): IngresoVista[] =
  * De más reciente a más vieja: lo último que anuló es lo que más probablemente
  * quiera mirar, sobre todo si se equivocó al anular.
  */
-export const anulacionesDelMes = (e: EstadoApp, hoyIso: string): AnulacionVista[] => {
+export const anulacionesDelRango = (
+  e: EstadoApp,
+  hoyIso: string,
+  rango: Rango = 'mes',
+): AnulacionVista[] => {
   const ventas: AnulacionVista[] = e.ventas
-    .filter((v) => v.anuladaEn && mismoMesLocal(v.anuladaEn, hoyIso))
+    .filter((v) => v.anuladaEn && dentroDelRango(v.anuladaEn, hoyIso, rango))
     .map((v) => ({
       id: v.id,
       tipo: 'venta' as const,
@@ -171,7 +186,7 @@ export const anulacionesDelMes = (e: EstadoApp, hoyIso: string): AnulacionVista[
     }));
 
   const ingresos: AnulacionVista[] = e.compras
-    .filter((c) => c.anuladaEn && mismoMesLocal(c.anuladaEn, hoyIso))
+    .filter((c) => c.anuladaEn && dentroDelRango(c.anuladaEn, hoyIso, rango))
     .map((c) => ({
       id: c.id,
       tipo: 'ingreso' as const,
@@ -186,14 +201,21 @@ export const anulacionesDelMes = (e: EstadoApp, hoyIso: string): AnulacionVista[
   return [...ventas, ...ingresos].sort((a, b) => b.anuladaEn.localeCompare(a.anuladaEn));
 };
 
-export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
+export const vistaHoy = (e: EstadoApp, hoyIso: string, rango: Rango = 'mes'): VistaHoy => {
   const deudas = vistaDeudas(e, hoyIso);
   const diaSemana = diaDeSemanaLocal(hoyIso);
 
-  // Las del día que valen. Las anuladas salen por `anuladasDelMes`.
+  // Las del día que valen. Las anuladas salen por `anuladasDelRango`.
   const valenHoy = e.ventas.filter((v) => cuenta(v) && mismoDia(v.fecha, hoyIso));
   const pagosHoy = e.pagos.filter((p) => mismoDia(p.fecha, hoyIso));
-  const comprasHoy = e.compras.filter((c) => mismoDia(c.fecha, hoyIso));
+  /*
+   * Las entradas del rango, no del día. Las anuladas quedan afuera de esta lista
+   * y aparecen en el bloque de anulados, que es donde él las busca: mezcladas
+   * acá ensuciarían el total de lo que de verdad entró.
+   */
+  const comprasDelRango = e.compras.filter(
+    (c) => !c.anuladaEn && dentroDelRango(c.fecha, hoyIso, rango),
+  );
 
   const cobradoHoyCent =
     valenHoy.reduce((a, v) => a + v.cobradoCent, 0) +
@@ -233,12 +255,11 @@ export const vistaHoy = (e: EstadoApp, hoyIso: string): VistaHoy => {
           : 'debe' as const,
         items: v.items.reduce((a, i) => a + i.cantidad, 0),
       })),
-    ingresosDeHoy: vistaIngresos(e, comprasHoy.filter((c) => !c.anuladaEn)),
-    anuladasDelMes: anulacionesDelMes(e, hoyIso),
-    // Las anuladas no suman: el total del día es lo que de verdad entró.
-    ingresadoHoyCent: comprasHoy
-      .filter((c) => !c.anuladaEn)
-      .reduce((a, c) => a + c.totalCent, 0),
+    ingresosDelRango: vistaIngresos(e, comprasDelRango),
+    anuladasDelRango: anulacionesDelRango(e, hoyIso, rango),
+    rango,
+    // Las anuladas no suman: el total es lo que de verdad entró.
+    ingresadoDelRangoCent: comprasDelRango.reduce((a, c) => a + c.totalCent, 0),
     misiones: {
       venta: valenHoy.length > 0,
       cobro: pagosHoy.length > 0,
@@ -495,6 +516,8 @@ export const cuantosActivos = (l: readonly { activo: boolean }[]): number =>
  */
 export const reciboDeVenta = (e: EstadoApp, venta: Venta, negocio: string): DatosRecibo => ({
   negocio,
+  tipo: 'venta',
+  ...(venta.anuladaEn ? { anuladaEn: venta.anuladaEn } : {}),
   cliente: e.clientes.find((c) => c.id === venta.clienteId)?.nombre ?? 'Consumidor final',
   fechaIso: venta.fecha,
   lineas: venta.items.map((it) => {
@@ -617,3 +640,39 @@ export const ventasDelCliente = (
       unidades: v.items.reduce((a, i) => a + i.cantidad, 0),
       anulada: Boolean(v.anuladaEn),
     }));
+
+/**
+ * El comprobante de una entrada de mercadería.
+ *
+ * El mismo formato que el de una venta, con los importes al revés de quién le
+ * debe a quién: acá los números son de COSTO y el saldo es lo que él le debe al
+ * proveedor. Sirve para dos cosas concretas: mandarle al proveedor lo que anotó
+ * —"esto es lo que me llegó"— y, cuando se anula o se corrige, avisarle que la
+ * entrada anterior quedó sin efecto.
+ */
+export const reciboDeIngreso = (e: EstadoApp, compra: Compra, negocio: string): DatosRecibo => ({
+  negocio,
+  tipo: 'ingreso',
+  ...(compra.anuladaEn ? { anuladaEn: compra.anuladaEn } : {}),
+  cliente: compra.proveedorId
+    ? e.proveedores.find((p) => p.id === compra.proveedorId)?.nombre ?? 'Proveedor'
+    : 'Sin proveedor',
+  fechaIso: compra.fecha,
+  lineas: compra.items.map((it) => {
+    const p = e.productos.find((x) => x.id === it.productoId);
+    return {
+      ...(p?.codigo ? { codigo: p.codigo } : {}),
+      nombre: p?.nombre ?? 'Producto',
+      cantidad: it.cantidad,
+      precioUnitarioCent: it.costoUnitarioCent,
+    };
+  }),
+  totalCent: compra.totalCent,
+  /*
+   * Al contado ya está pagado; en cuenta no se pagó nada TODAVÍA de esta
+   * entrada. Los pagos a proveedores no existen como operación, así que un
+   * pago parcial de una compra no se puede representar y no se inventa.
+   */
+  pagadoCent: compra.condicionPago === 'contado' ? compra.totalCent : 0,
+  saldoCent: compra.condicionPago === 'contado' ? 0 : compra.totalCent,
+});

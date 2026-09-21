@@ -1,6 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type FocusEvent, type ReactNode } from 'react';
 import { formatear, type Cent } from '../domain/money.ts';
-import { compartirArchivo, reciboComoArchivo, type DatosRecibo } from './recibo.ts';
+import { compartirArchivo, reciboComoArchivo, resumenDelRecibo, type DatosRecibo } from './recibo.ts';
 
 export const Icono = ({ id, clase = '' }: { id: string; clase?: string }) => (
   <svg className={`ico ${clase}`} aria-hidden="true">
@@ -72,11 +72,16 @@ export const BotonCompartir = ({ datos, secundario = false }: { datos: DatosReci
         onClick={async () => {
           if (!archivo) return;
           setEstado('mandando');
-          const r = await compartirArchivo(archivo, `Comprobante · ${datos.cliente}`);
+          const titulo = `${datos.anuladaEn ? 'ANULADO · ' : ''}${datos.tipo === 'venta' ? 'Comprobante' : 'Ingreso'} · ${datos.cliente}`;
+          // El texto viaja junto con la imagen: si del otro lado no se puede ver
+          // el archivo, igual le llega lo que dice el comprobante.
+          const r = await compartirArchivo(archivo, titulo, resumenDelRecibo(datos).join('\n'));
           setEstado(r === 'descargado' ? 'descargado' : 'listo');
         }}>
         <Icono id="i-share" clase="ico-s" />
-        {archivo ? 'Compartir comprobante' : 'Preparando…'}
+        {!archivo ? 'Preparando…'
+          : datos.anuladaEn ? 'Compartir el anulado'
+          : 'Compartir comprobante'}
       </button>
       {estado === 'descargado' && (
         <p className="compartir-nota" role="status">

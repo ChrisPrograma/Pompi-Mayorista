@@ -138,3 +138,38 @@ export const mismoMesLocal = (a: string, b: string): boolean => mesLocal(a) === 
 /** "septiembre" — el nombre del mes de ese instante, para encabezados. */
 export const nombreDelMes = (iso: string): string =>
   new Date(iso).toLocaleDateString('es-AR', { timeZone: ZONA, month: 'long' });
+
+/**
+ * Rangos que se pueden mirar desde el inicio.
+ *
+ * Son tres y no diez a propósito: él cierra números por mes, sale a la calle por
+ * semana, y le paga a los proveedores cada quince días. Cualquier otro corte lo
+ * obligaría a elegir algo que no significa nada para su negocio.
+ */
+export type Rango = 'semana' | 'quincena' | 'mes';
+
+/** Cuántos días de calendario abarca cada rango. El mes va aparte: es calendario. */
+const DIAS_DEL_RANGO: Record<Exclude<Rango, 'mes'>, number> = { semana: 6, quincena: 14 };
+
+/**
+ * ¿Esta fecha entra en el rango que termina hoy?
+ *
+ * "Semana" son los últimos 7 días CONTANDO hoy, no las últimas 168 horas: si él
+ * mira el lunes a la mañana, lo del martes pasado a la tarde tiene que estar. Lo
+ * mismo que con la antigüedad de las deudas — se cuenta por calendario, que es
+ * como lo cuenta una persona.
+ *
+ * El mes es el mes calendario en curso, no "los últimos 30 días". Una ventana
+ * móvil haría que algo del 3 desapareciera el 2 del mes siguiente, justo en el
+ * medio del cierre.
+ */
+export const dentroDelRango = (iso: string, hoyIso: string, rango: Rango): boolean =>
+  rango === 'mes'
+    ? mismoMesLocal(iso, hoyIso)
+    : diasCalendario(iso, hoyIso) <= DIAS_DEL_RANGO[rango] && diaLocal(iso) <= diaLocal(hoyIso);
+
+/** Cómo se llama el rango en la pantalla. */
+export const nombreDelRango = (rango: Rango, hoyIso: string): string =>
+  rango === 'mes' ? `en ${nombreDelMes(hoyIso)}`
+    : rango === 'semana' ? 'en la semana'
+    : 'en la quincena';

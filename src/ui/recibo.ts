@@ -37,14 +37,80 @@ export interface LineaRecibo {
 
 export interface DatosRecibo {
   negocio: string;
+  /**
+   * Qué operación es. Cambia tres cosas y ninguna es cosmética: a quién dice
+   * que va dirigido, si los importes son de venta o de costo, y qué significa
+   * el saldo — lo que le deben a él, o lo que él le debe al proveedor.
+   */
+  tipo: 'venta' | 'ingreso';
+  /** El comercio, o el proveedor si es una entrada de mercadería. */
   cliente: string;
   fechaIso: string;
   lineas: LineaRecibo[];
   totalCent: Cent;
   pagadoCent: Cent;
-  /** Lo que queda debiendo por ESTA venta. */
+  /** Lo que queda debiendo por ESTA operación. */
   saldoCent: Cent;
+  /**
+   * Cuándo se anuló, si se anuló.
+   *
+   * Antes el comprobante de una operación anulada directamente no se ofrecía, y
+   * el motivo era bueno: mandar el comprobante de una venta dada de baja es peor
+   * que no mandar nada. Ahora se puede, pero el comprobante lo dice **en la
+   * cara**: una banda roja arriba de todo, antes que cualquier importe. Sirve
+   * justamente para eso — para avisarle al comercio que lo que le mandaron ayer
+   * quedó sin efecto.
+   */
+  anuladaEn?: string;
 }
+
+/**
+ * El comprobante en texto, renglón por renglón.
+ *
+ * Existe por dos motivos. Uno práctico: es lo que viaja como `text` en el menú
+ * de compartir, así que si el otro lado no puede con la imagen, igual le llega
+ * la información. Y uno de control: el dibujo sobre canvas no se puede testear
+ * sin navegador, pero esto sí, y así queda fijado que un comprobante anulado
+ * diga que está anulado.
+ */
+export const resumenDelRecibo = (d: DatosRecibo): string[] => {
+  const esVenta = d.tipo === 'venta';
+  const lineas: string[] = [];
+
+  if (d.anuladaEn) lineas.push(`⚠️ COMPROBANTE ANULADO el ${fechaYHora(d.anuladaEn)}`);
+
+  lineas.push(d.negocio);
+  lineas.push(esVenta ? 'Comprobante para' : 'Entrada de mercadería de');
+  lineas.push(d.cliente);
+  lineas.push(fechaYHora(d.fechaIso));
+  lineas.push('');
+
+  for (const l of d.lineas) {
+    const nombre = l.codigo ? `${l.codigo} · ${l.nombre}` : l.nombre;
+    lineas.push(
+      `${nombre} — ${l.cantidad} × ${formatear(l.precioUnitarioCent)}${esVenta ? '' : ' de costo'}` +
+      ` = ${formatear(l.precioUnitarioCent * l.cantidad)}`,
+    );
+  }
+
+  lineas.push('');
+  lineas.push(`Total: ${formatear(d.totalCent)}`);
+  lineas.push(`${esVenta ? 'Pagó' : 'Le pagaste'}: ${formatear(d.pagadoCent)}`);
+  if (d.saldoCent > 0) {
+    lineas.push(`${esVenta ? 'Queda debiendo' : 'Queda a pagar'}: ${formatear(d.saldoCent)}`);
+  }
+  lineas.push(estadoDelRecibo(d));
+
+  return lineas;
+};
+
+/** La cápsula de estado: la misma palabra en la imagen y en el texto. */
+export const estadoDelRecibo = (d: DatosRecibo): string => {
+  if (d.anuladaEn) return 'ANULADO';
+  if (d.saldoCent <= 0) return 'PAGADO';
+  if (d.pagadoCent > 0) return 'PAGO PARCIAL';
+  return d.tipo === 'venta' ? 'QUEDA EN CUENTA' : 'QUEDA A PAGAR';
+};
 
 /*
  * Medidas del dibujo. Todo en unidades lógicas; al final se multiplica por
@@ -64,6 +130,9 @@ const TINTA_3 = '#6B7F76';
 const LINEA = '#DCE5E0';
 const MARCA = '#0E5A4A';
 const DEUDA = '#B3541E';
+/* El rojo del aviso de anulado. Más oscuro que el de la app: acá va texto blanco
+   encima y tiene que leerse impreso, en una captura y en una miniatura. */
+const ANULADO = '#B02828';
 const FONDO = '#FFFFFF';
 
 /*
@@ -115,7 +184,9 @@ const linea = (ctx: CanvasRenderingContext2D, y: number) => {
 const altoDe = (d: DatosRecibo): number =>
   // El último sumando es el pie: la cápsula del estado y el "gracias" debajo.
   // Con menos, los dos quedaban en el mismo renglón, uno al lado del otro.
-  200 + d.lineas.length * 58 + (d.saldoCent > 0 ? 3 : 2) * 44 + 180;
+  200 + d.lineas.length * 58 + (d.saldoCent > 0 ? 3 : 2) * 44 + 180
+  // La banda de "ANULADO", cuando corresponde.
+  + (d.anuladaEn ? 78 : 0);
 
 /** Dibuja el recibo y devuelve el canvas. */
 export const dibujarRecibo = (d: DatosRecibo): HTMLCanvasElement => {
@@ -137,6 +208,25 @@ export const dibujarRecibo = (d: DatosRecibo): HTMLCanvasElement => {
   ctx.fillRect(0, 0, ANCHO, 8);
 
   let y = 76;
+
+  /*
+   * La banda de anulado va ARRIBA DE TODO, antes del nombre del negocio y mucho
+   * antes de cualquier importe. Quien lo recibe por WhatsApp ve la miniatura: si
+   * el aviso estuviera abajo, tendría que abrir la imagen para enterarse.
+   */
+  if (d.anuladaEn) {
+    ctx.fillStyle = ANULADO;
+    caja(ctx, MARGEN, 34, ANCHO - MARGEN * 2, 58, 12);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = FUENTE(800, 22);
+    ctx.fillText('⚠ COMPROBANTE ANULADO', ANCHO / 2, 63);
+    ctx.font = FUENTE(600, 15);
+    ctx.fillText(`el ${fechaYHora(d.anuladaEn)}`, ANCHO / 2, 82);
+    ctx.textAlign = 'left';
+    y += 78;
+  }
+
   ctx.fillStyle = MARCA;
   ctx.font = FUENTE(800, 34);
   ctx.fillText(d.negocio, MARGEN, y);
@@ -149,7 +239,7 @@ export const dibujarRecibo = (d: DatosRecibo): HTMLCanvasElement => {
   y += 40;
   ctx.fillStyle = TINTA_3;
   ctx.font = FUENTE(600, 16);
-  ctx.fillText('COMPROBANTE PARA', MARGEN, y);
+  ctx.fillText(d.tipo === 'venta' ? 'COMPROBANTE PARA' : 'ENTRADA DE MERCADERÍA DE', MARGEN, y);
 
   y += 32;
   ctx.fillStyle = TINTA;
@@ -194,7 +284,10 @@ export const dibujarRecibo = (d: DatosRecibo): HTMLCanvasElement => {
     // Segundo renglón: cuántas y a cuánto cada una.
     ctx.fillStyle = TINTA_3;
     ctx.font = FUENTE(500, 17);
-    ctx.fillText(`${l.cantidad} × ${formatear(l.precioUnitarioCent)}`, MARGEN, y + 24);
+    ctx.fillText(
+      `${l.cantidad} × ${formatear(l.precioUnitarioCent)}${d.tipo === 'venta' ? '' : ' de costo'}`,
+      MARGEN, y + 24,
+    );
 
     y += 58;
   }
@@ -217,15 +310,17 @@ export const dibujarRecibo = (d: DatosRecibo): HTMLCanvasElement => {
     y += 44;
   };
 
+  const esVenta = d.tipo === 'venta';
   fila('Total', formatear(d.totalCent), true);
-  fila('Pagó', formatear(d.pagadoCent), false, MARCA);
-  if (d.saldoCent > 0) fila('Queda debiendo', formatear(d.saldoCent), false, DEUDA);
+  fila(esVenta ? 'Pagó' : 'Le pagaste', formatear(d.pagadoCent), false, MARCA);
+  if (d.saldoCent > 0) {
+    fila(esVenta ? 'Queda debiendo' : 'Queda a pagar', formatear(d.saldoCent), false, DEUDA);
+  }
 
   // ---- estado -------------------------------------------------------------
   y += 4;
-  const estado =
-    d.saldoCent <= 0 ? 'PAGADO' : d.pagadoCent > 0 ? 'PAGO PARCIAL' : 'QUEDA EN CUENTA';
-  const colorEstado = d.saldoCent <= 0 ? MARCA : DEUDA;
+  const estado = estadoDelRecibo(d);
+  const colorEstado = d.anuladaEn ? ANULADO : d.saldoCent <= 0 ? MARCA : DEUDA;
 
   ctx.textAlign = 'left';
   ctx.font = FUENTE(800, 18);
@@ -241,7 +336,12 @@ export const dibujarRecibo = (d: DatosRecibo): HTMLCanvasElement => {
   ctx.textAlign = 'center';
   ctx.fillStyle = TINTA_3;
   ctx.font = FUENTE(500, 16);
-  ctx.fillText('Gracias por tu compra', ANCHO / 2, alto - 28);
+  ctx.fillText(
+    d.anuladaEn ? 'Este comprobante quedó sin efecto'
+      : d.tipo === 'venta' ? 'Gracias por tu compra'
+      : 'Comprobante de recepción de mercadería',
+    ANCHO / 2, alto - 28,
+  );
 
   return canvas;
 };
@@ -254,7 +354,13 @@ export const reciboComoArchivo = (d: DatosRecibo): Promise<File> =>
       if (!blob) return rechazar(new Error('No se pudo generar la imagen'));
       const limpio = d.cliente.normalize('NFD').replace(/[^\w]+/g, '-').replace(/^-|-$/g, '');
       const dia = d.fechaIso.slice(0, 10);
-      resolver(new File([blob], `comprobante-${limpio || 'venta'}-${dia}.png`, { type: 'image/png' }));
+      const que = d.tipo === 'venta' ? 'comprobante' : 'ingreso';
+      const anulado = d.anuladaEn ? 'ANULADO-' : '';
+      resolver(new File(
+        [blob],
+        `${anulado}${que}-${limpio || d.tipo}-${dia}.png`,
+        { type: 'image/png' },
+      ));
     }, 'image/png');
   });
 
@@ -277,7 +383,11 @@ export type ResultadoCompartir = 'compartido' | 'descargado' | 'cancelado';
  * si en el medio hay un `await` largo, cancela. Por eso `alCompartir` recibe el
  * archivo ya hecho y no los datos.
  */
-export const compartirArchivo = async (archivo: File, titulo: string): Promise<ResultadoCompartir> => {
+export const compartirArchivo = async (
+  archivo: File,
+  titulo: string,
+  texto?: string,
+): Promise<ResultadoCompartir> => {
   const nav = navigator as Navigator & {
     canShare?: (datos: { files?: File[] }) => boolean;
     share?: (datos: { files?: File[]; title?: string; text?: string }) => Promise<void>;
@@ -285,7 +395,7 @@ export const compartirArchivo = async (archivo: File, titulo: string): Promise<R
 
   if (nav.share && nav.canShare?.({ files: [archivo] })) {
     try {
-      await nav.share({ files: [archivo], title: titulo, text: titulo });
+      await nav.share({ files: [archivo], title: titulo, text: texto ?? titulo });
       return 'compartido';
     } catch (e) {
       // Cerrar el menú sin elegir nada tira AbortError. No es un error que

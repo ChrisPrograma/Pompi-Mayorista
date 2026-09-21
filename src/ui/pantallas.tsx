@@ -1,6 +1,6 @@
 import { useMemo, useState, type ChangeEvent } from 'react';
 import { aCentavos, pesos, type Cent } from '../domain/money.ts';
-import { fechaCorta, nombreDelMes } from '../domain/fechas.ts';
+import { fechaCorta, nombreDelRango, type Rango } from '../domain/fechas.ts';
 import type { Uuid } from '../domain/types.ts';
 import type { EstadoApp } from '../app/estado.ts';
 import {
@@ -202,8 +202,39 @@ function Barra<T extends string>({
   );
 }
 
+/**
+ * Semana · Quincena · Mes.
+ *
+ * Tres botones y no un desplegable: un `select` en un celular abre una rueda del
+ * sistema operativo, que para elegir entre tres cosas es un paso de más. Y son
+ * estos tres porque son los cortes que usa el negocio — la semana en que sale a
+ * la calle, la quincena en que le paga a los proveedores, el mes que cierra.
+ */
+const SelectorRango = ({ valor, alCambiar }: { valor: Rango; alCambiar: (r: Rango) => void }) => (
+  <div className="orden" role="group" aria-label="Qué período mirar">
+    <span className="orden-et">Mostrar</span>
+    <div className="chips">
+      {([['semana', 'Semana'], ['quincena', 'Quincena'], ['mes', 'Mes']] as const).map(([id, texto]) => (
+        <button key={id} type="button" className={`chip ${id === valor ? 'on' : ''}`}
+          aria-pressed={id === valor} onClick={() => alCambiar(id)}>
+          {texto}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
 export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
-  const v = useMemo(() => vistaHoy(estado, hoy), [estado, hoy]);
+  /*
+   * El rango de las dos secciones de abajo: lo que entró y lo que se anuló.
+   *
+   * Arranca en el mes porque es como él cierra los números. Es estado de la
+   * pantalla y nada más: cambiarlo recalcula la vista en el momento, sin pedirle
+   * nada al servidor ni recargar. Los números de arriba —cobré hoy, me deben— no
+   * dependen del rango: son del día y de la calle, siempre.
+   */
+  const [rango, setRango] = useState<Rango>('mes');
+  const v = useMemo(() => vistaHoy(estado, hoy, rango), [estado, hoy, rango]);
   const pend = sugerenciasPendientes(estado);
   const hechas = Number(v.misiones.venta) + Number(v.misiones.cobro);
 
@@ -395,18 +426,29 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
         * —un cero de más en la cantidad— y hasta ahora no había dónde verlo el
         * mismo día.
         */}
-      {v.ingresosDeHoy.length > 0 && (
+      {(v.ingresosDelRango.length > 0 || v.anuladasDelRango.length > 0) && (
+        <SelectorRango valor={rango} alCambiar={setRango} />
+      )}
+
+      {v.ingresosDelRango.length > 0 && (
         <>
           <div className="section-h">
-            <h2>Lo que ingresó hoy</h2>
-            <span className="hint">{plata(v.ingresadoHoyCent)}</span>
+            <h2>Lo que ingresó {nombreDelRango(rango, hoy)}</h2>
+            <span className="hint">{plata(v.ingresadoDelRangoCent)}</span>
           </div>
           <div className="stack" {...tour('ingresos-hoy')}>
-            {v.ingresosDeHoy.map((x) => (
+            {v.ingresosDelRango.map((x) => (
               <button className={`row ${x.anulada ? 'anulada' : ''}`} key={x.id}
                 onClick={() => acc.verIngreso(x.id)}>
+                {/*
+                  * Antes acá iba solo la hora, porque la lista era del día. Con
+                  * el rango en semana o mes, una hora suelta no ubica nada: va
+                  * el día arriba y la hora abajo.
+                  */}
                 <span className="thumb">
-                  <span style={{ fontFamily: 'Archivo', fontWeight: 700, fontSize: 12 }}>{x.hora}</span>
+                  <span style={{ fontFamily: 'Archivo', fontWeight: 700, fontSize: 11.5, lineHeight: 1.15, textAlign: 'center' }}>
+                    {fechaCorta(x.fecha)}<br />{x.hora}
+                  </span>
                 </span>
                 <span className="row-main">
                   <b>{x.proveedor}</b>
@@ -440,23 +482,33 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
         * Se limpia solo el 1° del mes siguiente. No se borra nada: la venta
         * anulada sigue entera en su ficha y en la base.
         */}
-      {v.anuladasDelMes.length > 0 && (
+      {v.anuladasDelRango.length > 0 && (
         <>
           <div className="section-h">
-            <h2>Anulado en {nombreDelMes(hoy)}</h2>
-            <span className="hint">{v.anuladasDelMes.length}</span>
+            <h2>Anulado {nombreDelRango(rango, hoy)}</h2>
+            <span className="hint">
+              {v.anuladasDelRango.length === 1 ? '1 comprobante' : `${v.anuladasDelRango.length} comprobantes`}
+            </span>
           </div>
           <div className="stack" {...tour('anulado-mes')}>
-            {v.anuladasDelMes.map((x) => (
+            {v.anuladasDelRango.map((x) => (
               <button className="row anulada" key={x.id}
                 onClick={() => (x.tipo === 'venta' ? acc.verVenta(x.id) : acc.verIngreso(x.id))}>
                 <span className="thumb">
                   <Icono id={x.tipo === 'venta' ? 'i-cart' : 'i-inbox'} />
                 </span>
                 <span className="row-main">
-                  <b>{x.conQuien}</b>
+                  <b>
+                    {/* El tipo, en una chapita: de un vistazo se distingue una
+                        venta a un comercio de una entrada de un proveedor. */}
+                    <span className={`pill ${x.tipo === 'venta' ? 'mute' : 'warn'}`}
+                      style={{ marginRight: 6 }}>
+                      {x.tipo === 'venta' ? 'Venta' : 'Ingreso'}
+                    </span>
+                    {x.conQuien}
+                  </b>
                   <span>
-                    {x.tipo === 'venta' ? 'Venta' : 'Ingreso'} del {fechaCorta(x.fecha)}
+                    {x.tipo === 'venta' ? 'Vendido' : 'Ingresado'} el {fechaCorta(x.fecha)}
                     {' · '}anulado el {fechaCorta(x.anuladaEn)}
                   </span>
                 </span>
