@@ -4,13 +4,13 @@ import {
 } from 'react';
 import { uuidv7 } from '../lib/uuid.ts';
 import { aCentavos, pesos, type Cent } from '../domain/money.ts';
-import { fechaCorta, fechaLarga, fechaYHora, mismoDiaLocal } from '../domain/fechas.ts';
+import { fechaCorta, fechaLarga, fechaYHora, horaLocal, mismoDiaLocal } from '../domain/fechas.ts';
 import { saldoCliente } from '../domain/saldos.ts';
 import type { Uuid } from '../domain/types.ts';
 import {
   activarCliente, activarProducto, activarProveedor, altaCliente, altaProducto, altaProveedor,
   anularCompra, anularVenta, aplicar, aplicarSugerencias, cambiarPrecio, clienteParecido, cobrar,
-  descartarSugerencias, editarCliente, editarProducto, editarProveedor, entrarMercaderia,
+  corregirIngreso, descartarSugerencias, editarCliente, editarProducto, editarProveedor, entrarMercaderia,
   estadoVacio, precioDe, productoConCodigo, productoParecido, vender,
   type Ctx, type EstadoApp, type Resultado,
 } from '../app/estado.ts';
@@ -35,11 +35,11 @@ import {
   Alerta, BotonCompartir, Coach, Exito, Hoja, Icono, claseCategoria, plata,
   type DatosExito,
 } from './componentes.tsx';
-import { RECORRIDO } from './recorrido.ts';
+import { RECORRIDO, tour } from './recorrido.ts';
 import {
   PantallaClientes, PantallaCosas, PantallaDeudas, PantallaHoy,
   PantallaIngreso, PantallaNumeros, PantallaProductos, PantallaProveedores,
-  PantallaVender, type Acciones, type Ruta,
+  PantallaVender, type Acciones, type CorreccionIngreso, type Ruta,
 } from './pantallas.tsx';
 
 const TABS: { id: Ruta; icono: string; texto: string; venta?: boolean }[] = [
@@ -102,6 +102,8 @@ export const App = () => {
   /** La venta que está esperando confirmación para anularse. */
   const [confirmarAnularVenta, setConfirmarAnularVenta] = useState<Uuid | null>(null);
   const [hojaCobro, setHojaCobro] = useState<Uuid | null>(null);
+  /** El ingreso que se está corrigiendo, si hay alguno. Ver `corregirIngreso`. */
+  const [corrigiendo, setCorrigiendo] = useState<CorreccionIngreso | null>(null);
   const [hojaProducto, setHojaProducto] = useState<ProductoVista | null>(null);
   const [hojaPrecios, setHojaPrecios] = useState(false);
   /**
@@ -411,6 +413,9 @@ export const App = () => {
   // ---- acciones ------------------------------------------------------------
   const irA = (r: Ruta) => {
     if (r !== 'vender') setClientePre(null);
+    // Lo mismo con la corrección: si se va de la pantalla de ingreso, se cancela.
+    // No se perdió nada — el ingreso original nunca se tocó.
+    if (r !== 'ingreso') setCorrigiendo(null);
     setRuta(r);
   };
 
@@ -443,6 +448,9 @@ export const App = () => {
   const iniciarRecorrido = () => { cerrarHojas(); irAlPaso(0); };
 
   const cerrarHojas = () => {
+    // Irse de la pantalla de ingreso cancela la corrección a medio hacer. El
+    // ingreso original sigue intacto: todavía no se despachó nada.
+    setCorrigiendo(null);
     setHojaCobro(null); setHojaProducto(null); setHojaPrecios(false);
     setHojaCliente(null); setFichaCliente(null); setHojaProdForm(null);
     setHojaPrecioDe(null); setHojaProv(null); setFichaProv(null); setExito(null);
@@ -467,6 +475,29 @@ export const App = () => {
     verVenta: (id) => setFichaVenta(id),
 
     verIngreso: (id) => setFichaIngreso(id),
+
+    /*
+     * Corregir = anular y volver a cargar. La pantalla de ingreso arranca con
+     * los datos viejos puestos, él cambia lo que estaba mal, y recién al
+     * confirmar se despachan las dos cosas juntas. Si se arrepiente en el medio
+     * no pasó nada: el ingreso original sigue intacto.
+     */
+    corregirIngreso: (id) => {
+      const compra = estado.compras.find((c) => c.id === id);
+      if (!compra || compra.anuladaEn) return;
+      setFichaIngreso(null);
+      setCorrigiendo({
+        compraId: compra.id,
+        proveedorId: compra.proveedorId!,
+        items: Object.fromEntries(compra.items.map((it) => [
+          it.productoId,
+          { cantidad: it.cantidad, costo: it.costoUnitarioCent / 100 },
+        ])),
+        condicion: compra.condicionPago,
+        cuando: `${fechaCorta(compra.fecha)} · ${horaLocal(compra.fecha)}`,
+      });
+      setRuta('ingreso');
+    },
 
     nuevoProducto: () => { setF({}); setErrorHoja(null); setHojaProdForm({ modo: 'alta' }); },
 
@@ -528,14 +559,24 @@ export const App = () => {
 
     cobrar: (clienteId) => setHojaCobro(clienteId),
 
-    entrar: (proveedorId, items, condicion) => {
+    entrar: (proveedorId, items, condicion, corrigeId) => {
       const c = ctx();
-      const r = entrarMercaderia(estado, { proveedorId, items, condicionPago: condicion }, c);
-      const compra = r.compras![0];
+      /*
+       * Una sola función para las dos cosas: entrada nueva, o corrección. La
+       * corrección devuelve la anulación de la vieja Y el alta de la nueva en un
+       * mismo resultado, así el estado se mueve una sola vez y no hay un
+       * instante en el que el stock esté a medio camino.
+       */
+      const r = corrigeId
+        ? corregirIngreso(estado, { compraId: corrigeId, proveedorId, items, condicionPago: condicion }, c)
+        : entrarMercaderia(estado, { proveedorId, items, condicionPago: condicion }, c);
+      // La corrección devuelve dos compras: primero la anulada, después la nueva.
+      const compra = r.compras![r.compras!.length - 1];
+      const anulada = corrigeId ? r.compras![0] : null;
       const suben = r.sugerencias?.length ?? 0;
 
-      void despachar(r, [{
-        tipo: 'registrar_compra', id: compra.id,
+      const alta = {
+        tipo: 'registrar_compra' as const, id: compra.id,
         payload: {
           p_negocio_id: estado.negocioId, p_proveedor_id: proveedorId,
           p_items: items.map((i) => ({
@@ -544,12 +585,36 @@ export const App = () => {
           })),
           p_condicion_pago: condicion, p_fecha: compra.fecha,
         },
-      }]);
+      };
+
+      /*
+       * El ORDEN de las dos operaciones importa y no es casual: primero se anula
+       * la vieja y después entra la nueva, igual que en el estado local. Al
+       * revés, el servidor tendría por un momento las dos compras sumando stock.
+       * Van en una sola llamada a `despachar`, así que o se encolan las dos o no
+       * se encola ninguna.
+       *
+       * La anulación lleva id propio, como siempre: reusar el de la compra
+       * pisaría su `registrar_compra` si todavía estuviera esperando subir.
+       */
+      void despachar(r, corrigeId
+        ? [
+            {
+              tipo: 'anular_compra' as const, id: uuidv7(),
+              payload: { p_id: corrigeId, p_fecha: anulada!.anuladaEn! },
+            },
+            alta,
+          ]
+        : [alta]);
+
+      setCorrigiendo(null);
 
       setExito({
-        titulo: 'Mercadería entrada',
+        titulo: corrigeId ? 'Ingreso corregido' : 'Mercadería entrada',
         monto: `${items.reduce((a, i) => a + i.cantidad, 0)} u.`,
-        texto: `Te salió ${plata(compra.totalCent)}. ${condicion === 'cuenta' ? 'Quedó anotado que se lo debés.' : 'Quedaste al día con él.'}`,
+        texto: corrigeId
+          ? `Quedó en ${plata(compra.totalCent)}. El anterior figura anulado y el stock ya está ajustado por la diferencia.`
+          : `Te salió ${plata(compra.totalCent)}. ${condicion === 'cuenta' ? 'Quedó anotado que se lo debés.' : 'Quedaste al día con él.'}`,
         deltas: [{ etiqueta: 'Te salió', valor: plata(compra.totalCent) }],
         extra: suben > 0 ? (
           <div className="warn-box">
@@ -1101,7 +1166,7 @@ export const App = () => {
             </button>
           </div>
         </div>
-        <div className="hud-money" data-tour="resumen">
+        <div className="hud-money" {...tour('resumen')}>
           <div className="mtile hot">
             <span>Cobré hoy</span>
             {/*
@@ -1124,7 +1189,8 @@ export const App = () => {
         <Pantalla
           key={ruta === 'vender' ? `vender-${clientePre ?? 'inicio'}` : ruta}
           estado={estado} hoy={hoy} acc={acc}
-          clienteInicial={ruta === 'vender' ? clientePre : null} />
+          clienteInicial={ruta === 'vender' ? clientePre : null}
+          corrigiendo={ruta === 'ingreso' ? corrigiendo : null} />
         {sinSubir > 0 && (
           <p className="sincro pend">
             <Icono id="i-cloud" /> {sinSubir} {sinSubir === 1 ? 'operación' : 'operaciones'} sin subir · se suben solas cuando haya señal
@@ -1597,7 +1663,20 @@ export const App = () => {
               </div>
             </div>
 
-            <button className="btn block" style={{ marginTop: 12 }}
+            {/*
+              * Corregir va ANTES que anular, y no es un detalle de orden: de las
+              * dos, corregir es casi siempre la que quiere. Cargó 100 donde iban
+              * 10, o puso mal un costo; anular a secas lo deja con el stock
+              * arreglado pero sin la entrada que de verdad ocurrió.
+              */}
+            {!c.anuladaEn && (
+              <button className="btn outline block" style={{ marginTop: 12 }}
+                onClick={() => acc.corregirIngreso(c.id)}>
+                Corregir este ingreso
+              </button>
+            )}
+
+            <button className="btn block" style={{ marginTop: c.anuladaEn ? 12 : 8 }}
               onClick={() => setFichaIngreso(null)}>Cerrar</button>
 
             {!c.anuladaEn && (

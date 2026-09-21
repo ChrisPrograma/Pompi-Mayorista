@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ChangeEvent, type FocusEvent, type ReactNode } from 'react';
 import { formatear, type Cent } from '../domain/money.ts';
 import { compartirArchivo, reciboComoArchivo, type DatosRecibo } from './recibo.ts';
 
@@ -104,21 +104,77 @@ export const Exito = ({ datos, alCerrar }: { datos: DatosExito; alCerrar: () => 
   </div>
 );
 
+/**
+ * El selector de cantidad: menos, el número, más.
+ *
+ * El número dejó de ser un texto y pasó a ser un campo que se puede escribir.
+ * Motivo del cliente, y es de los pedidos más sensatos que hizo: cargar 100
+ * unidades de una entrada eran cien toques en el +. Los botones siguen igual,
+ * porque para una venta de tres collares tocar dos veces es más rápido que
+ * escribir.
+ *
+ * Tres detalles que hacen que un campo numérico no moleste:
+ *
+ *  - **Se escribe en un estado de texto, no en el número.** Si cada tecla se
+ *    convirtiera a número, borrar el último dígito daría `NaN` → 0, y el campo
+ *    volvería a "0" en la mitad de lo que está escribiendo. Acá el vacío se
+ *    permite mientras tenga el foco, y al salir se acomoda solo.
+ *  - **Mientras el usuario NO está escribiendo, manda el valor de afuera**, que
+ *    es lo que permite que el botón + actualice el campo, y que "vaciar todo"
+ *    lo vuelva a cero.
+ *  - **Se recorta contra el mínimo y el máximo**, así no hay forma de anotar
+ *    una cantidad negativa escribiéndola a mano.
+ */
 export const Cantidad = ({
-  valor, alCambiar, maximo, minimo = 0,
-}: { valor: number; alCambiar: (n: number) => void; maximo?: number; minimo?: number }) => (
-  <span className="qty">
-    <button className="qbtn" aria-label="Sacar uno"
-      disabled={valor <= minimo} onClick={() => alCambiar(valor - 1)}>
-      <Icono id="i-minus" clase="ico-s" />
-    </button>
-    <span className="qnum">{valor}</span>
-    <button className="qbtn plus" aria-label="Agregar uno"
-      disabled={maximo !== undefined && valor >= maximo} onClick={() => alCambiar(valor + 1)}>
-      <Icono id="i-plus" clase="ico-s" />
-    </button>
-  </span>
-);
+  valor, alCambiar, maximo, minimo = 0, etiqueta = 'Cantidad',
+}: {
+  valor: number;
+  alCambiar: (n: number) => void;
+  maximo?: number;
+  minimo?: number;
+  /** Para el lector de pantalla: "Cantidad de Collar reflectivo". */
+  etiqueta?: string;
+}) => {
+  const [escribiendo, setEscribiendo] = useState<string | null>(null);
+
+  const acotar = (n: number) =>
+    Math.max(minimo, maximo !== undefined ? Math.min(maximo, n) : n);
+
+  const alTipear = (texto: string) => {
+    // Solo dígitos: ni signo menos, ni coma, ni "e". Son unidades enteras.
+    const limpio = texto.replace(/[^0-9]/g, '');
+    setEscribiendo(limpio);
+    if (limpio === '') return;            // todavía está borrando, no es un cero
+    alCambiar(acotar(Number(limpio)));
+  };
+
+  return (
+    <span className="qty">
+      <button className="qbtn" aria-label="Sacar uno" type="button"
+        disabled={valor <= minimo} onClick={() => alCambiar(valor - 1)}>
+        <Icono id="i-minus" clase="ico-s" />
+      </button>
+      <input
+        className="qnum" type="number" inputMode="numeric" min={minimo}
+        {...(maximo !== undefined ? { max: maximo } : {})}
+        aria-label={etiqueta}
+        value={escribiendo ?? String(valor)}
+        onFocus={(ev: FocusEvent<HTMLInputElement>) => ev.target.select()}
+        onChange={(ev: ChangeEvent<HTMLInputElement>) => alTipear(ev.target.value)}
+        onBlur={() => {
+          // Si se fue dejándolo vacío, queda en el mínimo: un campo en blanco no
+          // es una cantidad, y dejarlo así rompería el total.
+          if (escribiendo === '') alCambiar(minimo);
+          setEscribiendo(null);
+        }}
+      />
+      <button className="qbtn plus" aria-label="Agregar uno" type="button"
+        disabled={maximo !== undefined && valor >= maximo} onClick={() => alCambiar(valor + 1)}>
+        <Icono id="i-plus" clase="ico-s" />
+      </button>
+    </span>
+  );
+};
 
 export const Alerta = ({
   tipo, icono, titulo, texto, accion,

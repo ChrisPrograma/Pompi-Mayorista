@@ -156,11 +156,29 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .step-title h2{font-size:19px;font-weight:700}
 .step-title .n{width:26px;height:26px;border-radius:9px;background:var(--brand);color:#fff;display:grid;place-items:center;font-family:'Archivo';font-weight:700;font-size:14px;flex:0 0 auto}
 
-.qty{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.qty{display:flex;align-items:center;gap:5px;flex:0 0 auto}
 .qbtn{width:34px;height:34px;border-radius:11px;background:var(--sunk);color:var(--ink);display:grid;place-items:center;border:1px solid var(--line)}
 .qbtn.plus{background:var(--brand);color:#fff;border-color:var(--brand)}
 .qbtn:disabled{opacity:.35}
-.qnum{min-width:22px;text-align:center;font-family:'Archivo';font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
+/* El número del selector es un campo escribible: cargar 100 unidades no puede
+   ser cien toques en el +. Se le saca la ruedita de los navegadores, que en un
+   campo de 46 px se come el número y se toca sin querer al hacer scroll. */
+.qnum{
+  width:46px;min-width:46px;text-align:center;
+  font-family:'Archivo';font-weight:700;font-size:17px;font-variant-numeric:tabular-nums;
+  background:var(--surface);border:1.6px solid var(--line-strong);border-radius:11px;
+  padding:6px 2px;height:34px;color:var(--ink);
+  -moz-appearance:textfield;appearance:textfield;
+}
+.qnum::-webkit-outer-spin-button,.qnum::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.qnum:focus{border-color:var(--brand);outline:none}
+/* En teléfonos angostos el selector le come el ancho al nombre del producto, y
+   un nombre largo se parte a la mitad de una palabra. Acá el campo y los botones
+   se achican lo justo: sigue entrando un número de tres dígitos. */
+@media (max-width:365px){
+  .qnum{width:40px;min-width:40px;font-size:16px}
+  .qbtn{width:31px;height:31px}
+}
 .up{display:inline-flex;align-items:center;gap:3px;color:var(--warn);font-weight:600;white-space:nowrap;font-size:14px}
 .up .ico{width:13px;height:13px;stroke-width:2.6;flex:0 0 auto}
 

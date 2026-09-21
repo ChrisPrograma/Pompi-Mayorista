@@ -1,0 +1,9 @@
+{
+  "//": "El chequeo que reproduce EXACTAMENTE el que corre Vercel: los mismos archivos que `tsc --noEmit` mira en el build (src, sin los tests, según el `exclude` de tsconfig.json), pero con las declaraciones mínimas de React para poder correrlo sin `npm install`. Existe porque un deploy ya se cayó por un archivo que compilaba local y no allá; ahora la diferencia se ve acá antes de empaquetar.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [],
+    "skipLibCheck": true
+  },
+  "include": ["src", "scripts/tipos-minimos"]
+}

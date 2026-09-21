@@ -24,5 +24,11 @@
   },
   "include": [
     "src"
+  ],
+  "//exclude": "Los tests NO entran en el build de producción. Vercel compila la app, y un archivo de test que no compila no tiene por qué tirar abajo un deploy. El chequeo de los tests no se pierde: lo hace `tsconfig.completo.json`, que mira TODO y es el que corre `npm run antes-de-subir` y `npm run build:bun` antes de empaquetar. La regla del proyecto queda así: lo local es MÁS estricto que Vercel, nunca menos.",
+  "exclude": [
+    "src/**/__tests__/**",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
   ]
 }

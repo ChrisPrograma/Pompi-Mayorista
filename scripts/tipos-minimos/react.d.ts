@@ -53,6 +53,18 @@ declare module 'react' {
     readonly button: number;
   }
 
+  /*
+   * El foco. Lo usa el selector de cantidad para seleccionar lo que hay escrito
+   * apenas se toca el campo: así escribir "25" reemplaza el número en vez de
+   * quedar pegado atrás del que ya estaba.
+   */
+  export interface FocusEvent<T = Element> {
+    target: T & { value: string; select(): void };
+    currentTarget: T & { value: string };
+    preventDefault(): void;
+    stopPropagation(): void;
+  }
+
   export interface FormEvent<T = Element> {
     target: T;
     currentTarget: T;

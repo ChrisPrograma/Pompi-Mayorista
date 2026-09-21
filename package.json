@@ -14,10 +14,11 @@
     "lint": "eslint src --ext .ts,.tsx",
     "test:node": "mkdir -p node_modules/vitest && cp scripts/vitest-shim/* node_modules/vitest/ && node --experimental-strip-types --test src/domain/__tests__/*.test.ts src/app/__tests__/*.test.ts src/data/__tests__/*.test.ts",
     "verificar": "node scripts/verificar-imports.mjs",
-    "build:bun": "npm run typecheck:completo && node scripts/build.mjs",
+    "build:bun": "npm run typecheck:produccion && npm run typecheck:completo && node scripts/build.mjs",
     "typecheck:sin-npm": "tsc -p tsconfig.verificacion.json",
     "typecheck:completo": "tsc -p tsconfig.completo.json",
-    "antes-de-subir": "npm run typecheck:completo && npm run test:node"
+    "antes-de-subir": "npm run typecheck:produccion && npm run typecheck:completo && npm run test:node",
+    "typecheck:produccion": "tsc -p tsconfig.produccion.json"
   },
   "dependencies": {
     "react": "^19.2.0",

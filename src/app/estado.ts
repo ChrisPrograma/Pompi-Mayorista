@@ -854,6 +854,77 @@ export const anularCompra = (e: EstadoApp, compraId: Uuid, ctx: Ctx): Resultado 
 };
 
 
+/**
+ * Corregir un ingreso ya cargado.
+ *
+ * Es el pedido de "editar una entrada", resuelto como lo exige la REGLA 0: NO
+ * se edita nada. Corregir es **anular la entrada vieja y apilar la nueva**, las
+ * dos cosas en un solo movimiento del estado y en una sola tanda de operaciones
+ * hacia el servidor.
+ *
+ * POR QUÉ NO SE EDITA LA FILA
+ *
+ * `compra_items` y `movimientos_stock` tienen triggers de inmutabilidad: la
+ * base **impide** modificarlos. Y está bien que lo impida — si se pudiera
+ * editar la cantidad de una entrada de hace tres semanas, el stock de hoy
+ * cambiaría sin que quede registro de qué pasó ni cuándo. Así, en cambio, queda
+ * escrito: entró esto, fue un error, entró esto otro.
+ *
+ * POR QUÉ EL ORDEN IMPORTA
+ *
+ * La anulación se aplica al estado ANTES de armar la entrada nueva. Si no, el
+ * costo "anterior" contra el que se compara sería el de la compra que se está
+ * anulando, y la app sugeriría un aumento de precio contra un costo que dejó de
+ * existir. Hecho en este orden, la sugerencia sale contra el costo que de
+ * verdad queda vigente.
+ *
+ * LO QUE SE ARREGLA SOLO, POR CÓMO ESTÁ ARMADO EL SISTEMA
+ *
+ *  - **El stock** no se "recalcula": entran los ajustes negativos de la vieja y
+ *    los positivos de la nueva. La suma da la cantidad corregida, y el camino
+ *    queda a la vista en el libro mayor.
+ *  - **La deuda con el proveedor** es la suma de sus compras en cuenta no
+ *    anuladas, así que sale sola.
+ *  - **El costo del producto** pasa a ser el de la compra nueva, porque es la
+ *    última no anulada.
+ *  - **Las sugerencias de precio** de la vieja quedan descartadas y, si la
+ *    corrección sigue siendo un aumento, nace la que corresponde.
+ *
+ * LO QUE NO SE TOCA: las ventas ya hechas con esa mercadería. Su costo se
+ * congeló cuando se hicieron.
+ */
+export const corregirIngreso = (
+  e: EstadoApp,
+  args: {
+    compraId: Uuid;
+    proveedorId: Uuid;
+    items: { productoId: Uuid; cantidad: number; costoUnitarioCent: Cent }[];
+    condicionPago: Compra['condicionPago'];
+  },
+  ctx: Ctx,
+): Resultado => {
+  const anulacion = anularCompra(e, args.compraId, ctx);   // valida que exista y no esté anulada
+  const despues = aplicar(e, anulacion);
+  const alta = entrarMercaderia(despues, {
+    proveedorId: args.proveedorId,
+    items: args.items,
+    condicionPago: args.condicionPago,
+  }, ctx);
+
+  const juntar = <T,>(a?: T[], b?: T[]): T[] | undefined => {
+    const todo = [...(a ?? []), ...(b ?? [])];
+    return todo.length ? todo : undefined;
+  };
+
+  return {
+    ...(juntar(anulacion.compras, alta.compras) ? { compras: juntar(anulacion.compras, alta.compras)! } : {}),
+    ...(juntar(anulacion.movimientos, alta.movimientos) ? { movimientos: juntar(anulacion.movimientos, alta.movimientos)! } : {}),
+    ...(juntar(anulacion.sugerencias, alta.sugerencias) ? { sugerencias: juntar(anulacion.sugerencias, alta.sugerencias)! } : {}),
+    ...(juntar(anulacion.sugerenciasResueltas, alta.sugerenciasResueltas)
+      ? { sugerenciasResueltas: juntar(anulacion.sugerenciasResueltas, alta.sugerenciasResueltas)! } : {}),
+  };
+};
+
 /** Registrar un cobro. */
 export const cobrar = (
   e: EstadoApp,

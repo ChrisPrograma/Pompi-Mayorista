@@ -9,9 +9,8 @@
  * pasar en silencio.
  */
 
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { RECORRIDO } from '../../ui/recorrido.ts';
+import { ANCLAS, RECORRIDO, tour } from '../../ui/recorrido.ts';
 import { ventasDelCliente } from '../../ui/vistas.ts';
 import { estadoVacio, type EstadoApp } from '../estado.ts';
 import { pesos, type Cent } from '../../domain/money.ts';
@@ -19,24 +18,28 @@ import type { Venta } from '../../domain/types.ts';
 
 const RUTAS = ['hoy', 'vender', 'deudas', 'cosas', 'productos', 'clientes', 'ingreso', 'proveedores', 'numeros'];
 
-const fuentes = ['src/ui/pantallas.tsx', 'src/ui/App.tsx']
-  .map((f) => readFileSync(new URL(`../../../${f}`, import.meta.url), 'utf8'))
-  .join('\n');
-
 describe('el recorrido apunta a cosas que existen', () => {
-  it('cada paso que destaca algo apunta a un data-tour de verdad', () => {
+  it('cada paso que destaca algo apunta a un ancla declarada', () => {
     /*
-     * El que más vale de los tres. Un paso que apunta a un `data-tour` que se
-     * borró no rompe nada visible: el recorrido lo muestra igual, pero sin
-     * resaltar nada, y el usuario se queda mirando una pantalla entera sin
-     * saber de qué le están hablando.
+     * El trabajo pesado lo hace el TIPO: `destaca` es `Ancla`, y las pantallas
+     * marcan con `tour('...')`, que recibe lo mismo. Un nombre mal escrito o una
+     * marca borrada de una pantalla no compilan, así que este test es el cinturón
+     * y el tipo son los tiradores.
+     *
+     * La versión anterior de este test leía los archivos de las pantallas con
+     * `node:fs`. Andaba, pero metía Node en el chequeo de tipos de una app de
+     * navegador y tiró abajo el deploy: el `tsc` de Vercel no tiene esos tipos.
      */
     const faltantes = RECORRIDO
       .map((p) => p.destaca)
-      .filter((m): m is string => Boolean(m))
-      .filter((m) => !fuentes.includes(`data-tour="${m}"`));
+      .filter((m): m is NonNullable<typeof m> => Boolean(m))
+      .filter((m) => !ANCLAS.includes(m));
 
     expect(faltantes).toEqual([]);
+  });
+
+  it('tour() produce el atributo que el recorrido busca en el DOM', () => {
+    expect(tour('resumen')).toEqual({ 'data-tour': 'resumen' });
   });
 
   it('todos los pasos van a una pantalla que existe', () => {

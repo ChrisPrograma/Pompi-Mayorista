@@ -31,9 +31,43 @@
 
 import type { Ruta } from './pantallas.tsx';
 
+/**
+ * Los lugares de la app que el recorrido puede señalar.
+ *
+ * Es una lista cerrada, y eso es todo el punto: el paso declara `destaca` con
+ * uno de estos nombres y la pantalla marca el elemento con el MISMO nombre, los
+ * dos tipados contra esta lista. Si alguien saca una marca de una pantalla y se
+ * olvida del paso, o escribe mal el nombre, no compila.
+ *
+ * Antes esto lo controlaba un test que leía los archivos de las pantallas con
+ * `node:fs`. Funcionaba, pero metía Node adentro del chequeo de tipos de una app
+ * que corre en el navegador, y eso fue exactamente lo que rompió el deploy del
+ * 21/09: `tsc` de Vercel no tiene los tipos de Node. Un tipo hace el mismo
+ * trabajo, antes y sin dependencias.
+ */
+export const ANCLAS = [
+  'resumen', 'misiones', 'alerta', 'vender-ya', 'me-llego',
+  'ventas-hoy', 'ingresos-hoy', 'anulado-mes',
+  'lista-clientes', 'cliente-nuevo', 'lista-productos', 'buscador-venta',
+  'lista-deudas', 'lista-proveedores', 'hub',
+  'producto-nuevo', 'lista-productos-todos', 'buscador',
+  'lista-clientes-todos', 'lista-proveedores-todos', 'ganancia',
+] as const;
+
+export type Ancla = (typeof ANCLAS)[number];
+
+/**
+ * Marca un elemento de una pantalla como destino de un paso.
+ *
+ * Se usa esparcido en el JSX: `<div {...tour('ventas-hoy')}>`. Sale un atributo
+ * `data-tour` común y corriente, igual que antes; lo que cambia es que el
+ * nombre ya no es un texto suelto que nadie revisa.
+ */
+export const tour = (ancla: Ancla): { 'data-tour': Ancla } => ({ 'data-tour': ancla });
+
 export interface PasoRecorrido {
   ruta: Ruta;
-  destaca?: string;
+  destaca?: Ancla;
   titulo: string;
   texto: string;
   /** Deja la venta empezada en el paso del pedido, para mostrar la lista real. */

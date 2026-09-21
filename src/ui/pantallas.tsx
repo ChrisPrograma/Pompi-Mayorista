@@ -22,6 +22,12 @@ import {
   type Direccion, type OrdenCliente, type OrdenProducto, type OrdenProveedor,
 } from './orden.ts';
 import { Alerta, Cantidad, Icono, claseCategoria, plata, plataCorta } from './componentes.tsx';
+/*
+ * `tour` marca los elementos que el recorrido puede señalar. El import cruzado
+ * con recorrido.ts no es un ciclo real: lo que va en la otra dirección es solo
+ * el tipo `Ruta`, y los `import type` se borran al compilar.
+ */
+import { tour } from './recorrido.ts';
 
 export type Ruta =
   | 'hoy' | 'vender' | 'deudas' | 'cosas'
@@ -37,7 +43,13 @@ export interface Acciones {
     cobradoCent: Cent,
   ) => void;
   cobrar: (clienteId: Uuid) => void;
-  entrar: (proveedorId: Uuid, items: { productoId: Uuid; cantidad: number; costoUnitarioCent: Cent }[], condicion: 'contado' | 'cuenta') => void;
+  entrar: (
+    proveedorId: Uuid,
+    items: { productoId: Uuid; cantidad: number; costoUnitarioCent: Cent }[],
+    condicion: 'contado' | 'cuenta',
+    /** Si viene, este ingreso REEMPLAZA a ese: el viejo se anula en el mismo paso. */
+    corrigeId?: Uuid,
+  ) => void;
   verProducto: (p: ProductoVista) => void;
   nuevoCliente: (origen: 'vender' | 'clientes') => void;
   verCliente: (id: Uuid) => void;
@@ -45,6 +57,8 @@ export interface Acciones {
   verVenta: (id: Uuid) => void;
   /** Abre el detalle de un ingreso de mercadería, con la opción de anularlo. */
   verIngreso: (id: Uuid) => void;
+  /** Abre la pantalla de ingreso cargada con los datos de ese, para corregirlo. */
+  corregirIngreso: (id: Uuid) => void;
   nuevoProducto: () => void;
   nuevoProveedor: () => void;
   verProveedor: (id: Uuid) => void;
@@ -62,6 +76,22 @@ interface Props {
   acc: Acciones;
   /** Comercio recién dado de alta: la venta arranca directamente con él elegido. */
   clienteInicial?: Uuid | null;
+  /**
+   * Un ingreso que se está corrigiendo: la pantalla arranca con sus datos
+   * cargados y, al confirmar, el viejo se anula. Ver `corregirIngreso`.
+   */
+  corrigiendo?: CorreccionIngreso | null;
+}
+
+/** Los datos de un ingreso, tal como los necesita la pantalla para rehacerlo. */
+export interface CorreccionIngreso {
+  compraId: Uuid;
+  proveedorId: Uuid;
+  /** Lo que tenía cargado: cantidad y costo por unidad, en pesos. */
+  items: Record<Uuid, { cantidad: number; costo: number }>;
+  condicion: 'contado' | 'cuenta';
+  /** Para poder decirle cuál está corrigiendo: "el del 21/09 a las 14:24". */
+  cuando: string;
 }
 
 const Volver = ({ acc }: { acc: Acciones }) => (
@@ -85,6 +115,47 @@ const Volver = ({ acc }: { acc: Acciones }) => (
  * criterios serían ocho chips, dos filas, y la mitad diciendo lo mismo al revés.
  * Así son cuatro chips y una flecha que se entiende sola.
  */
+/**
+ * El buscador solo, sin los chips de ordenar.
+ *
+ * Sale de adentro de `Barra` porque las pantallas de vender y de ingreso lo
+ * necesitan sin el resto: ahí la lista no se ordena —el orden lo decide el
+ * catálogo— pero sí hace falta encontrar un producto entre cien sin scrollear
+ * con el comercio esperando enfrente.
+ */
+function Buscador({
+  valor, alBuscar, ejemplo, cuantos, total,
+}: {
+  valor: string;
+  alBuscar: (q: string) => void;
+  ejemplo: string;
+  cuantos: number;
+  total: number;
+}) {
+  return (
+    <>
+      <div className="buscador">
+        <Icono id="i-search" clase="ico-s" />
+        <input className="texto" type="search" inputMode="search"
+          value={valor} placeholder={ejemplo} aria-label="Buscar"
+          onChange={(ev: ChangeEvent<HTMLInputElement>) => alBuscar(ev.target.value)} />
+        {valor && (
+          <button className="buscador-x" onClick={() => alBuscar('')} aria-label="Borrar la búsqueda">
+            <Icono id="i-close" clase="ico-s" />
+          </button>
+        )}
+      </div>
+
+      {/* Solo cuando la búsqueda achica la lista: si no, es ruido permanente. */}
+      {valor.trim() && (
+        <p className="orden-et" role="status">
+          {cuantos === 0 ? 'No encontré nada con eso' : `${cuantos} de ${total}`}
+        </p>
+      )}
+    </>
+  );
+}
+
 function Barra<T extends string>({
   opciones, valor, alCambiar, direccion, alInvertir,
   busqueda, alBuscar, ejemplo, cuantos, total,
@@ -103,24 +174,8 @@ function Barra<T extends string>({
   const alfabetico = valor !== 'precio' && valor !== 'deuda';
   return (
     <div className="barra">
-      <div className="buscador">
-        <Icono id="i-search" clase="ico-s" />
-        <input className="texto" type="search" inputMode="search"
-          value={busqueda} placeholder={ejemplo} aria-label="Buscar"
-          onChange={(ev: ChangeEvent<HTMLInputElement>) => alBuscar(ev.target.value)} />
-        {busqueda && (
-          <button className="buscador-x" onClick={() => alBuscar('')} aria-label="Borrar la búsqueda">
-            <Icono id="i-close" clase="ico-s" />
-          </button>
-        )}
-      </div>
-
-      {/* Solo cuando la búsqueda achica la lista: si no, es ruido permanente. */}
-      {busqueda.trim() && (
-        <p className="orden-et" role="status">
-          {cuantos === 0 ? 'No encontré nada con eso' : `${cuantos} de ${total}`}
-        </p>
-      )}
+      <Buscador valor={busqueda} alBuscar={alBuscar} ejemplo={ejemplo}
+        cuantos={cuantos} total={total} />
 
       <div className="orden" role="group" aria-label="Ordenar por">
         <span className="orden-et">Ordenar por</span>
@@ -208,13 +263,13 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
         </button>
       )}
 
-      <button className="big-action" data-tour="vender-ya" onClick={() => acc.ir('vender')}>
+      <button className="big-action" {...tour('vender-ya')} onClick={() => acc.ir('vender')}>
         <span className="circ"><Icono id="i-cart" clase="ico-xl" /></span>
         <span><b>Vender ahora</b><span>Cargás el pedido y cobrás</span></span>
         <Icono id="i-arrow" clase="ico-arrow" />
       </button>
 
-      <button className="second-action" data-tour="me-llego" onClick={() => acc.ir('ingreso')}>
+      <button className="second-action" {...tour('me-llego')} onClick={() => acc.ir('ingreso')}>
         <span className="circ"><Icono id="i-inbox" /></span>
         <span><b>Me llegó mercadería</b><span>Cargás lo que te trajo el proveedor</span></span>
         <Icono id="i-arrow" clase="ico-arrow ico-s" />
@@ -228,7 +283,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
       )}
 
       {v.alertaDeuda && (
-        <div data-tour="alerta">
+        <div {...tour('alerta')}>
         <Alerta tipo="bad" icono="i-alert"
           titulo={`${v.alertaDeuda.nombre} te debe hace ${v.alertaDeuda.dias} días`}
           texto={`Son ${plata(v.alertaDeuda.saldoCent)}. Es la deuda más vieja que tenés.`}
@@ -247,7 +302,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
           accion={{ texto: 'Cargar', alTocar: () => acc.ir('productos') }} />
       )}
 
-      <div className="misiones" data-tour="misiones">
+      <div className="misiones" {...tour('misiones')}>
         <div className="mis-head">
           <Icono id="i-star" />
           <h3>Tu día en 2 pasos</h3>
@@ -303,7 +358,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
             <h2>Lo que vendiste hoy</h2>
             <span className="hint">{plata(v.vendidoHoyCent)}</span>
           </div>
-          <div className="stack" data-tour="ventas-hoy">
+          <div className="stack" {...tour('ventas-hoy')}>
             {/*
               * Cada venta es un botón: tocándola se abre el detalle con los
               * productos y el botón para volver a mandar el comprobante. Es el
@@ -346,7 +401,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
             <h2>Lo que ingresó hoy</h2>
             <span className="hint">{plata(v.ingresadoHoyCent)}</span>
           </div>
-          <div className="stack" data-tour="ingresos-hoy">
+          <div className="stack" {...tour('ingresos-hoy')}>
             {v.ingresosDeHoy.map((x) => (
               <button className={`row ${x.anulada ? 'anulada' : ''}`} key={x.id}
                 onClick={() => acc.verIngreso(x.id)}>
@@ -391,7 +446,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
             <h2>Anulado en {nombreDelMes(hoy)}</h2>
             <span className="hint">{v.anuladasDelMes.length}</span>
           </div>
-          <div className="stack" data-tour="anulado-mes">
+          <div className="stack" {...tour('anulado-mes')}>
             {v.anuladasDelMes.map((x) => (
               <button className="row anulada" key={x.id}
                 onClick={() => (x.tipo === 'venta' ? acc.verVenta(x.id) : acc.verIngreso(x.id))}>
@@ -436,8 +491,17 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
   const [forma, setForma] = useState<'total' | 'parte' | 'debe' | null>(null);
   /** Lo que entrega, en pesos, tal como él lo tipea. Solo aplica a "una parte". */
   const [entrega, setEntrega] = useState('');
+  /** Lo que escribió en el buscador del paso 2. */
+  const [q, setQ] = useState('');
 
   const productos = useMemo(() => vistaParaVender(estado), [estado]);
+  /*
+   * Lo que se DIBUJA. Filtrar acá y no en `productos` es lo que hace que las
+   * cantidades ya elegidas no se pierdan: el pedido vive en `items`, por id de
+   * producto, así que buscar solo cambia qué filas se ven. Escribe "col", carga
+   * tres collares, borra la búsqueda, y los tres collares siguen en el carrito.
+   */
+  const visibles = useMemo(() => buscarProductos(productos, q), [productos, q]);
   const deudas = useMemo(() => vistaDeudas(estado, hoy), [estado, hoy]);
   const cliente = estado.clientes.find((c) => c.id === clienteId);
 
@@ -453,7 +517,7 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
       <div className="view">
         <div className="steps"><i className="on" /><i /><i /></div>
         <div className="step-title"><span className="n">1</span><h2>¿A quién le vendés?</h2></div>
-        <div className="stack" data-tour="lista-clientes">
+        <div className="stack" {...tour('lista-clientes')}>
           {estado.clientes.filter((c) => c.activo).length === 0 && (
             <Alerta tipo="ok" icono="i-store" titulo="Todavía no tenés comercios cargados"
               texto="No importa: cargalo acá abajo y seguís con la venta sin salir de esta pantalla." />
@@ -474,7 +538,7 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
             );
           })}
 
-          <button className="row" data-tour="cliente-nuevo" onClick={() => acc.nuevoCliente('vender')}>
+          <button className="row" {...tour('cliente-nuevo')} onClick={() => acc.nuevoCliente('vender')}>
             <span className="thumb c-juguete"><Icono id="i-plus" /></span>
             <span className="row-main">
               <b>Es un comercio nuevo</b>
@@ -500,7 +564,14 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
           accion={{ texto: 'Cambiar', alTocar: () => setPaso(1) }} />
 
         <p className="eyebrow">Qué le vendés</p>
-        <div className="stack" data-tour="lista-productos">
+        {/* El buscador aparece recién cuando hay lista como para perderse. */}
+        {(productos.length > 6 || q) && (
+          <div {...tour('buscador-venta')}>
+            <Buscador valor={q} alBuscar={setQ} ejemplo="Buscar por código o nombre…"
+              cuantos={visibles.length} total={productos.length} />
+          </div>
+        )}
+        <div className="stack" {...tour('lista-productos')}>
           {/*
             * Esta lista sale de `vistaParaVender`, que muestra lo que hay EN EL
             * AUTO. Puede estar vacía por dos motivos muy distintos, y decir
@@ -522,7 +593,7 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
                 accion={{ texto: 'Ver productos', alTocar: () => acc.ir('productos') }} />
             )
           )}
-          {productos.map((p) => (
+          {visibles.map((p) => (
             <div className="row" key={p.id}>
               <span className={`thumb ${claseCategoria(p.categoria)}`}><Icono id="i-box" /></span>
               <span className="row-main">
@@ -538,7 +609,7 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
                   {p.enStock > 0 ? ` · quedan ${p.enStock}` : ' · sin stock anotado'}
                 </span>
               </span>
-              <Cantidad valor={items[p.id] ?? 0}
+              <Cantidad valor={items[p.id] ?? 0} etiqueta={`Cantidad de ${p.nombre}`}
                 alCambiar={(n) => setItems({ ...items, [p.id]: Math.max(0, n) })} />
             </div>
           ))}
@@ -682,7 +753,7 @@ export const PantallaDeudas = ({ estado, hoy, acc }: Props) => {
       </div>
 
       <div className="section-h"><h2>Quién te debe</h2><span className="hint">de más viejo a más nuevo</span></div>
-      <div className="stack" data-tour="lista-deudas">
+      <div className="stack" {...tour('lista-deudas')}>
         {/* Con cero comercios, "cobraste todo" sería un elogio por no haber vendido. */}
         {v.lista.length === 0 && (
           estado.clientes.filter((c) => c.activo).length === 0 ? (
@@ -750,7 +821,7 @@ export const PantallaCosas = ({ estado, acc }: Props) => {
       )}
 
       <div className="section-h"><h2>Mis cosas</h2><span className="hint">todo lo tuyo, ordenado</span></div>
-      <div className="hub" data-tour="hub">
+      <div className="hub" {...tour('hub')}>
         <button onClick={() => acc.ir('ingreso')}>
           <span className="thumb"><Icono id="i-inbox" /></span>
           <b>Me llegó mercadería</b><span>Entrás lo que te trajo el proveedor</span>
@@ -820,14 +891,14 @@ export const PantallaProductos = ({ estado, acc }: Props) => {
       <Volver acc={acc} />
       <div className="section-h"><h2>Mis productos</h2><span className="hint">tocá uno para ver la ganancia</span></div>
 
-      <button className="second-action" data-tour="producto-nuevo" onClick={acc.nuevoProducto}>
+      <button className="second-action" {...tour('producto-nuevo')} onClick={acc.nuevoProducto}>
         <span className="circ"><Icono id="i-plus" /></span>
         <span><b>Agregar un producto</b><span>Nombre y a cuánto lo vendés</span></span>
         <Icono id="i-arrow" clase="ico-arrow ico-s" />
       </button>
 
       {(todos.length > 1 || q) && (
-        <div data-tour="buscador">
+        <div {...tour('buscador')}>
           <Barra opciones={ORDENES_PRODUCTO} valor={orden} alCambiar={cambiarOrden}
             direccion={dir} alInvertir={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
             busqueda={q} alBuscar={setQ} ejemplo="Buscar por código, nombre o rubro"
@@ -835,7 +906,7 @@ export const PantallaProductos = ({ estado, acc }: Props) => {
         </div>
       )}
 
-      <div className="stack" data-tour="lista-productos-todos">
+      <div className="stack" {...tour('lista-productos-todos')}>
         {productos.length === 0 && (
           <Alerta tipo="ok" icono="i-box" titulo="Todavía no cargaste ningún producto"
             texto="Con el nombre y el precio de venta ya alcanza para empezar a vender. El costo y el stock los podés poner después."
@@ -866,17 +937,31 @@ export const PantallaProductos = ({ estado, acc }: Props) => {
 // ---------------------------------------------------------------------------
 // Me llegó mercadería
 // ---------------------------------------------------------------------------
-export const PantallaIngreso = ({ estado, acc }: Props) => {
-  const [paso, setPaso] = useState(1);
-  const [proveedorId, setProveedorId] = useState<Uuid | null>(null);
-  const [items, setItems] = useState<Record<Uuid, { cantidad: number; costo: number }>>({});
-  const [condicion, setCondicion] = useState<'contado' | 'cuenta' | null>(null);
+export const PantallaIngreso = ({ estado, acc, corrigiendo }: Props) => {
+  /*
+   * Corrigiendo un ingreso, la pantalla arranca en el paso 2 con todo cargado:
+   * el proveedor ya se sabe, y lo que hay que cambiar es una cantidad o un
+   * costo. Mandarlo de nuevo por el paso 1 sería hacerle elegir algo que ya
+   * eligió.
+   */
+  const [paso, setPaso] = useState(corrigiendo ? 2 : 1);
+  const [proveedorId, setProveedorId] = useState<Uuid | null>(corrigiendo?.proveedorId ?? null);
+  const [items, setItems] = useState<Record<Uuid, { cantidad: number; costo: number }>>(
+    corrigiendo?.items ?? {},
+  );
+  const [condicion, setCondicion] = useState<'contado' | 'cuenta' | null>(
+    corrigiendo?.condicion ?? null,
+  );
+  const [q, setQ] = useState('');
 
   const prov = vistaProveedores(estado);
   const productos = useMemo(() => vistaProductos(estado), [estado]);
   const delProveedor = productos.filter(
     (p) => estado.productos.find((x) => x.id === p.id)?.proveedorId === proveedorId,
   );
+  // Igual que en la venta: filtrar solo cambia qué filas se ven; lo cargado vive
+  // en `items` y no se pierde al buscar.
+  const visibles = buscarProductos(delProveedor, q);
   const lineas = Object.entries(items).filter(([, v]) => v.cantidad > 0);
   const total = lineas.reduce((a, [, v]) => a + pesos(v.costo) * v.cantidad, 0);
   const unidades = lineas.reduce((a, [, v]) => a + v.cantidad, 0);
@@ -886,7 +971,7 @@ export const PantallaIngreso = ({ estado, acc }: Props) => {
       <div className="view">
         <div className="steps"><i className="on" /><i /><i /></div>
         <div className="step-title"><span className="n">1</span><h2>¿Quién te trajo?</h2></div>
-        <div className="stack" data-tour="lista-proveedores">
+        <div className="stack" {...tour('lista-proveedores')}>
           {/*
             * Sin esto la pantalla quedaba en blanco y sin salida: ni un botón
             * para agregar el proveedor, ni una explicación. Es justo el tipo de
@@ -917,13 +1002,33 @@ export const PantallaIngreso = ({ estado, acc }: Props) => {
     return (
       <div className="view">
         <div className="steps"><i className="on" /><i className="on" /><i /></div>
-        <div className="step-title"><span className="n">2</span><h2>¿Qué te trajo?</h2></div>
-        <Alerta tipo="ok" icono="i-store"
-          titulo={prov.lista.find((p) => p.id === proveedorId)?.nombre ?? ''}
-          texto="Te muestro solo lo que le comprás a él."
-          accion={{ texto: 'Cambiar', alTocar: () => setPaso(1) }} />
+        <div className="step-title">
+          <span className="n">2</span>
+          <h2>{corrigiendo ? '¿Qué entró de verdad?' : '¿Qué te trajo?'}</h2>
+        </div>
+
+        {/*
+          * Corrigiendo, el cartel de arriba explica qué va a pasar con el
+          * ingreso viejo. Que no se entere después es la peor versión de esto:
+          * vería dos entradas en la lista del día y pensaría que se duplicó.
+          */}
+        {corrigiendo ? (
+          <Alerta tipo="warn" icono="i-alert"
+            titulo={`Estás corrigiendo el ingreso del ${corrigiendo.cuando}`}
+            texto="Dejá las cantidades y los costos como fueron de verdad. Al confirmar, el ingreso anterior queda anulado y este lo reemplaza."
+            accion={{ texto: 'Cancelar', alTocar: () => acc.ir('hoy') }} />
+        ) : (
+          <Alerta tipo="ok" icono="i-store"
+            titulo={prov.lista.find((p) => p.id === proveedorId)?.nombre ?? ''}
+            texto="Te muestro solo lo que le comprás a él."
+            accion={{ texto: 'Cambiar', alTocar: () => setPaso(1) }} />
+        )}
 
         <p className="eyebrow">Cuántas unidades entraron y a qué precio</p>
+        {(delProveedor.length > 6 || q) && (
+          <Buscador valor={q} alBuscar={setQ} ejemplo="Buscar por código o nombre…"
+            cuantos={visibles.length} total={delProveedor.length} />
+        )}
         <div className="stack">
           {/*
             * La lista filtra por proveedor, así que puede estar vacía aunque
@@ -941,7 +1046,7 @@ export const PantallaIngreso = ({ estado, acc }: Props) => {
                 : 'En la ficha de cada producto se elige de qué proveedor es. Los que no lo tengan puesto no aparecen en esta lista.'}
               accion={{ texto: 'Ver productos', alTocar: () => acc.ir('productos') }} />
           )}
-          {delProveedor.map((p) => {
+          {visibles.map((p) => {
             const it = items[p.id] ?? { cantidad: 0, costo: (p.costoCent ?? 0) / 100 };
             const subio = pesos(it.costo) > (p.costoCent ?? 0);
             return (
@@ -955,7 +1060,7 @@ export const PantallaIngreso = ({ estado, acc }: Props) => {
                           {plata(p.costoCent ?? 0)} → {plata(pesos(it.costo))}</span>
                       : `te costaba ${plata(p.costoCent ?? 0)}`}</span>
                   </span>
-                  <Cantidad valor={it.cantidad}
+                  <Cantidad valor={it.cantidad} etiqueta={`Cantidad de ${p.nombre}`}
                     alCambiar={(n) => setItems({ ...items, [p.id]: { ...it, cantidad: Math.max(0, n) } })} />
                 </div>
                 {it.cantidad > 0 && (
@@ -1021,6 +1126,12 @@ export const PantallaIngreso = ({ estado, acc }: Props) => {
         </button>
       </div>
 
+      {corrigiendo && (
+        <p className="parcial-aviso" role="status">
+          Al confirmar, el ingreso del {corrigiendo.cuando} queda anulado y este lo reemplaza.
+          El stock se ajusta solo por la diferencia.
+        </p>
+      )}
       <button className="btn lg block" disabled={!condicion}
         onClick={() => condicion && proveedorId && acc.entrar(
           proveedorId,
@@ -1028,8 +1139,9 @@ export const PantallaIngreso = ({ estado, acc }: Props) => {
             productoId, cantidad: v.cantidad, costoUnitarioCent: pesos(v.costo),
           })),
           condicion,
+          corrigiendo?.compraId,
         )}>
-        Entrar la mercadería
+        {corrigiendo ? 'Guardar la corrección' : 'Entrar la mercadería'}
       </button>
       <button className="btn outline block" onClick={() => setPaso(2)}>Volver a la lista</button>
     </div>
@@ -1070,7 +1182,7 @@ export const PantallaProveedores = ({ estado, acc }: Props) => {
           cuantos={lista.length} total={v.lista.length} />
       )}
 
-      <div className="stack" data-tour="lista-proveedores-todos">
+      <div className="stack" {...tour('lista-proveedores-todos')}>
         {lista.length === 0 && (
           <Alerta tipo="ok" icono="i-store" titulo="Todavía no cargaste proveedores"
             texto="Con el nombre alcanza. Sirven para saber a quién le debés y de dónde vino cada producto."
@@ -1123,7 +1235,7 @@ export const PantallaClientes = ({ estado, hoy, acc }: Props) => {
           cuantos={lista.length} total={activos.length} />
       )}
 
-      <div className="stack" data-tour="lista-clientes-todos">
+      <div className="stack" {...tour('lista-clientes-todos')}>
         {lista.length === 0 && (
           <Alerta tipo="ok" icono="i-store" titulo="Todavía no cargaste comercios"
             texto="Con el nombre alcanza. La zona y el día de visita los podés completar después, cuando tengas un rato."
@@ -1164,7 +1276,7 @@ export const PantallaNumeros = ({ estado, hoy }: Props) => {
 
   return (
     <div className="view">
-      <div className="hero-n" data-tour="ganancia">
+      <div className="hero-n" {...tour('ganancia')}>
         <span>Te quedó este mes</span>
         <b>{plata(v.gananciaCent)}</b>
         <em>después de descontar lo que te costó la mercadería</em>
