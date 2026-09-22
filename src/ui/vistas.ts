@@ -335,7 +335,14 @@ export const vistaProductos = (e: EstadoApp): ProductoVista[] => {
       const precioCent = precioDe(e, p.id);
       const costoCent = costoDe(e, p.id);
       const s = stock.get(p.id);
-      const ganancia = precioCent !== null && costoCent !== null ? precioCent - costoCent : null;
+      /*
+       * Un costo en CERO es "no lo cargué", no "me salió gratis", y por eso no
+       * genera ganancia ni margen. Sin esto, un producto sin costo mostraba
+       * "ganás 100%" — y desde que existe la tarjeta de capital, ese 100% queda
+       * justo al lado del cartel que dice que a ese producto le falta el costo.
+       * Dos números que se contradicen en la misma pantalla.
+       */
+      const ganancia = precioCent !== null && costoCent ? precioCent - costoCent : null;
       return {
         id: p.id,
         codigo: p.codigo,
@@ -676,3 +683,55 @@ export const reciboDeIngreso = (e: EstadoApp, compra: Compra, negocio: string): 
   pagadoCent: compra.condicionPago === 'contado' ? compra.totalCent : 0,
   saldoCent: compra.condicionPago === 'contado' ? 0 : compra.totalCent,
 });
+
+export interface ValorDelStock {
+  /** Lo que le costó lo que tiene guardado: el capital inmovilizado. */
+  costoCent: Cent;
+  /** Lo que va a entrar si lo vende todo a precio de lista. */
+  ventaCent: Cent;
+  /** Cuántos productos distintos tienen stock. */
+  productos: number;
+  /** Cuántas unidades hay en total. */
+  unidades: number;
+  /**
+   * Productos con stock a los que les falta el costo o el precio.
+   *
+   * Se cuentan y se muestran a propósito: sin esto, el número de arriba estaría
+   * SUBESTIMADO en silencio. Un capital que dice menos de lo que es, y que
+   * encima se arregla solo a medida que cargue costos, es peor que uno que
+   * avisa "ojo, faltan tres".
+   *
+   * Un costo en CERO cuenta como faltante, y es el caso que más pasa: cargó las
+   * unidades que ya tenía en casa y dejó el costo vacío. Para la app eso es una
+   * compra de $0, no un dato ausente; para el capital es lo mismo que no
+   * tenerlo.
+   */
+  sinCosto: number;
+  sinPrecio: number;
+}
+
+/**
+ * Cuánta plata tiene parada en mercadería.
+ *
+ * Dos números y no uno, porque son dos preguntas distintas y él las hace las
+ * dos: **cuánto puso** (a costo, el capital que está inmovilizado) y **cuánto va
+ * a sacar** (a precio de lista, si lo vende todo). El primero es el que le dice
+ * si está sobrecargado de stock; el segundo, cuánto tiene para facturar.
+ *
+ * Lo que tiene stock NEGATIVO no resta. Un stock negativo significa que vendió
+ * algo que el sistema no tiene como recibido: es un error de carga, no plata en
+ * contra. Restarlo del capital haría que un error de tipeo bajara el número del
+ * negocio.
+ */
+export const valorDelStock = (e: EstadoApp): ValorDelStock => {
+  const conStock = vistaProductos(e).filter((p) => p.enStock > 0);
+
+  return {
+    costoCent: conStock.reduce((a, p) => a + (p.costoCent ?? 0) * p.enStock, 0),
+    ventaCent: conStock.reduce((a, p) => a + (p.precioCent ?? 0) * p.enStock, 0),
+    productos: conStock.length,
+    unidades: conStock.reduce((a, p) => a + p.enStock, 0),
+    sinCosto: conStock.filter((p) => !p.costoCent).length,
+    sinPrecio: conStock.filter((p) => !p.precioCent).length,
+  };
+};

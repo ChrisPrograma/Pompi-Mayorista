@@ -179,6 +179,29 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .qnum{width:40px;min-width:40px;font-size:16px}
   .qbtn{width:31px;height:31px}
 }
+/* Paginado compacto, al pie de las listas del inicio. */
+.paginado{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:2px}
+.paginado-et{font-size:14px;color:var(--ink-3);font-variant-numeric:tabular-nums;margin-right:2px}
+.paginado-btn{
+  width:34px;height:34px;border-radius:11px;flex:none;
+  background:var(--surface);border:1.6px solid var(--line-strong);color:var(--ink);
+  font-size:20px;line-height:1;display:grid;place-items:center;
+}
+.paginado-btn:disabled{opacity:.35}
+.paginado-btn:active:not(:disabled){background:var(--surface-2)}
+
+/* La tarjeta del capital en productos, arriba de "Mis productos". Misma línea
+   gráfica que los dos números del encabezado, en la superficie clara. */
+.capital{display:flex;gap:10px}
+.capital>div{flex:1;min-width:0;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-m);padding:11px 13px 12px}
+.capital b{display:block;font-family:'Archivo';font-variation-settings:'wdth' 108;font-weight:700;
+  font-size:25px;line-height:1.15;font-variant-numeric:tabular-nums;white-space:nowrap}
+.capital span{font-size:14.5px;color:var(--ink-3);display:block}
+.capital .fuerte{background:var(--brand-soft);border-color:color-mix(in srgb,var(--brand) 22%,transparent)}
+.capital .fuerte b{color:var(--brand-ink)}
+.capital-nota{font-size:14px;color:var(--warn);margin:0}
+
 .up{display:inline-flex;align-items:center;gap:3px;color:var(--warn);font-weight:600;white-space:nowrap;font-size:14px}
 .up .ico{width:13px;height:13px;stroke-width:2.6;flex:0 0 auto}
 
@@ -559,6 +582,19 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
 
 /* El código del producto, adelante del nombre. Monoespaciado para que los
  * números queden alineados uno abajo del otro en la lista. */
+/*
+ * La chapita del código. El selector base es `.cod` para que sirva en cualquier
+ * lado —la lista de vender, el resumen del ingreso, las sugerencias— y no solo
+ * adentro de una fila. Lo único que se repite abajo es el `display`, que es lo
+ * que `.row-main span` pisa.
+ */
+.cod{
+  display:inline-block;
+  font-family:'Archivo',monospace;font-variant-numeric:tabular-nums;
+  font-size:.86em;font-weight:700;color:var(--brand-ink);
+  background:var(--brand-soft);border-radius:6px;padding:0 6px;margin-right:5px;
+  vertical-align:baseline;
+}
 .row-main .cod{
   /*
    * El selector es `.row-main .cod` y no `.cod` a propósito.

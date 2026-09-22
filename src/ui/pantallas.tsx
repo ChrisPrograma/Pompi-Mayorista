@@ -6,6 +6,7 @@ import type { EstadoApp } from '../app/estado.ts';
 import {
   sugerenciasPendientes,
   cuantosActivos,
+  valorDelStock,
   vistaDeudas,
   vistaHoy,
   vistaNumeros,
@@ -21,7 +22,10 @@ import {
   ordenarClientes, ordenarProductos, ordenarProveedores,
   type Direccion, type OrdenCliente, type OrdenProducto, type OrdenProveedor,
 } from './orden.ts';
-import { Alerta, Cantidad, Icono, claseCategoria, plata, plataCorta } from './componentes.tsx';
+import {
+  Alerta, Cantidad, Codigo, Icono, Paginado, claseCategoria, plata, plataCorta,
+} from './componentes.tsx';
+import { POR_PAGINA, paginaDe } from './paginado.ts';
 /*
  * `tour` marca los elementos que el recorrido puede señalar. El import cruzado
  * con recorrido.ts no es un ciclo real: lo que va en la otra dirección es solo
@@ -234,6 +238,17 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
    * dependen del rango: son del día y de la calle, siempre.
    */
   const [rango, setRango] = useState<Rango>('mes');
+  /*
+   * Una página por lista. Cambiar el rango las vuelve todas a la primera: si
+   * estaba en la página 3 de "mes" y pasa a "semana", quedarse en la 3 le
+   * mostraría una lista vacía y parecería que no hay nada.
+   */
+  const [pagVentas, setPagVentas] = useState(0);
+  const [pagIngresos, setPagIngresos] = useState(0);
+  const [pagAnuladas, setPagAnuladas] = useState(0);
+  const cambiarRango = (r: Rango) => {
+    setRango(r); setPagVentas(0); setPagIngresos(0); setPagAnuladas(0);
+  };
   const v = useMemo(() => vistaHoy(estado, hoy, rango), [estado, hoy, rango]);
   const pend = sugerenciasPendientes(estado);
   const hechas = Number(v.misiones.venta) + Number(v.misiones.cobro);
@@ -396,7 +411,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
               * pedido más chico de todos y el que más veces se va a usar —
               * "mandámelo de nuevo" es lo que más le piden.
               */}
-            {v.ventasDeHoy.map((x) => (
+            {paginaDe(v.ventasDeHoy, pagVentas, POR_PAGINA).map((x) => (
               <button className="row" key={x.id} onClick={() => acc.verVenta(x.id)}>
                 <span className="thumb">
                   <span style={{ fontFamily: 'Archivo', fontWeight: 700, fontSize: 12 }}>{x.hora}</span>
@@ -414,11 +429,13 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
               </button>
             ))}
           </div>
+          <Paginado pagina={pagVentas} porPagina={POR_PAGINA}
+            total={v.ventasDeHoy.length} alCambiar={setPagVentas} />
         </>
       )}
 
       {/*
-        * "Lo que ingresó hoy", al lado de lo que vendió.
+        * "Lo que ingresó", al lado de lo que vendió.
         *
         * Va DEBAJO de las ventas y no arriba: lo que entra es plata que sale, y
         * la pantalla de inicio tiene que abrir con lo que ganó. Pero tiene que
@@ -427,7 +444,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
         * mismo día.
         */}
       {(v.ingresosDelRango.length > 0 || v.anuladasDelRango.length > 0) && (
-        <SelectorRango valor={rango} alCambiar={setRango} />
+        <SelectorRango valor={rango} alCambiar={cambiarRango} />
       )}
 
       {v.ingresosDelRango.length > 0 && (
@@ -437,7 +454,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
             <span className="hint">{plata(v.ingresadoDelRangoCent)}</span>
           </div>
           <div className="stack" {...tour('ingresos-hoy')}>
-            {v.ingresosDelRango.map((x) => (
+            {paginaDe(v.ingresosDelRango, pagIngresos, POR_PAGINA).map((x) => (
               <button className={`row ${x.anulada ? 'anulada' : ''}`} key={x.id}
                 onClick={() => acc.verIngreso(x.id)}>
                 {/*
@@ -467,6 +484,8 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
               </button>
             ))}
           </div>
+          <Paginado pagina={pagIngresos} porPagina={POR_PAGINA}
+            total={v.ingresosDelRango.length} alCambiar={setPagIngresos} />
         </>
       )}
 
@@ -491,7 +510,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
             </span>
           </div>
           <div className="stack" {...tour('anulado-mes')}>
-            {v.anuladasDelRango.map((x) => (
+            {paginaDe(v.anuladasDelRango, pagAnuladas, POR_PAGINA).map((x) => (
               <button className="row anulada" key={x.id}
                 onClick={() => (x.tipo === 'venta' ? acc.verVenta(x.id) : acc.verIngreso(x.id))}>
                 <span className="thumb">
@@ -520,6 +539,8 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
               </button>
             ))}
           </div>
+          <Paginado pagina={pagAnuladas} porPagina={POR_PAGINA}
+            total={v.anuladasDelRango.length} alCambiar={setPagAnuladas} />
         </>
       )}
     </div>
@@ -649,7 +670,7 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
             <div className="row" key={p.id}>
               <span className={`thumb ${claseCategoria(p.categoria)}`}><Icono id="i-box" /></span>
               <span className="row-main">
-                <b>{p.nombre}</b>
+                <b><Codigo valor={p.codigo} />{p.nombre}</b>
                 {/*
                   * Sin tope en la cantidad, a propósito. El stock que muestra es
                   * lo que el sistema cree que hay, y puede estar atrasado: si él
@@ -925,6 +946,7 @@ export const PantallaCosas = ({ estado, acc }: Props) => {
 // Productos
 // ---------------------------------------------------------------------------
 export const PantallaProductos = ({ estado, acc }: Props) => {
+  const capital = useMemo(() => valorDelStock(estado), [estado]);
   const [orden, setOrden] = useState<OrdenProducto>('nombre');
   const [dir, setDir] = useState<Direccion>(DIRECCION_INICIAL.nombre);
   const [q, setQ] = useState('');
@@ -942,6 +964,43 @@ export const PantallaProductos = ({ estado, acc }: Props) => {
     <div className="view">
       <Volver acc={acc} />
       <div className="section-h"><h2>Mis productos</h2><span className="hint">tocá uno para ver la ganancia</span></div>
+
+      {/*
+        * Cuánta plata tiene parada en mercadería.
+        *
+        * Dos números porque son dos preguntas: cuánto PUSO (a costo, el capital
+        * inmovilizado) y cuánto va a SACAR si lo vende todo. El primero le dice
+        * si está sobrecargado de stock; el segundo, cuánto tiene para facturar.
+        */}
+      {capital.productos > 0 && (
+        <>
+          <div className="capital">
+            <div className="fuerte">
+              <b>{plata(capital.costoCent)}</b>
+              <span>capital en productos</span>
+            </div>
+            <div>
+              <b>{plata(capital.ventaCent)}</b>
+              <span>si lo vendés todo</span>
+            </div>
+          </div>
+          <p className="hint" style={{ fontSize: 14.5, marginTop: -8 }}>
+            {capital.unidades} unidades en {capital.productos === 1 ? '1 producto' : `${capital.productos} productos`}
+          </p>
+          {/*
+            * Sin esto el capital estaría subestimado EN SILENCIO, y encima se
+            * arreglaría solo a medida que cargue costos, que es la peor forma de
+            * que un número se mueva: sin que nadie sepa por qué.
+            */}
+          {capital.sinCosto > 0 && (
+            <p className="capital-nota" role="status">
+              {capital.sinCosto === 1
+                ? '1 producto con stock no tiene costo cargado, así que no suma en el capital.'
+                : `${capital.sinCosto} productos con stock no tienen costo cargado, así que no suman en el capital.`}
+            </p>
+          )}
+        </>
+      )}
 
       <button className="second-action" {...tour('producto-nuevo')} onClick={acc.nuevoProducto}>
         <span className="circ"><Icono id="i-plus" /></span>
@@ -968,7 +1027,7 @@ export const PantallaProductos = ({ estado, acc }: Props) => {
           <button className="row" key={p.id} onClick={() => acc.verProducto(p)}>
             <span className={`thumb ${claseCategoria(p.categoria)}`}><Icono id="i-box" /></span>
             <span className="row-main">
-              <b>{p.codigo ? <><span className="cod">{p.codigo}</span> {p.nombre}</> : p.nombre}</b>
+              <b><Codigo valor={p.codigo} />{p.nombre}</b>
               <span>{[p.variante, `${p.enStock} unidades`].filter(Boolean).join(' · ')}</span>
             </span>
             <span className="row-end">
@@ -1106,7 +1165,7 @@ export const PantallaIngreso = ({ estado, acc, corrigiendo }: Props) => {
                 <div className="row" style={{ border: 0, padding: 0, background: 'none' }}>
                   <span className={`thumb ${claseCategoria(p.categoria)}`}><Icono id="i-box" /></span>
                   <span className="row-main">
-                    <b>{p.nombre}</b>
+                    <b><Codigo valor={p.codigo} />{p.nombre}</b>
                     <span>{subio
                       ? <span className="up"><Icono id="i-up" clase="ico-s" />
                           {plata(p.costoCent ?? 0)} → {plata(pesos(it.costo))}</span>
@@ -1156,7 +1215,10 @@ export const PantallaIngreso = ({ estado, acc, corrigiendo }: Props) => {
           {lineas.map(([id, v]) => (
             <div key={id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 14 }}>
               <b style={{ fontFamily: 'Archivo', minWidth: 30 }}>{v.cantidad}×</b>
-              <span style={{ flex: 1 }}>{productos.find((p) => p.id === id)?.nombre}</span>
+              <span style={{ flex: 1 }}>
+                <Codigo valor={productos.find((p) => p.id === id)?.codigo} />
+                {productos.find((p) => p.id === id)?.nombre}
+              </span>
               <span className="num" style={{ fontWeight: 600 }}>{plata(pesos(v.costo) * v.cantidad)}</span>
             </div>
           ))}

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type FocusEvent, type ReactNode } from 'react';
 import { formatear, type Cent } from '../domain/money.ts';
 import { compartirArchivo, reciboComoArchivo, resumenDelRecibo, type DatosRecibo } from './recibo.ts';
+import { cuantasPaginas } from './paginado.ts';
 
 export const Icono = ({ id, clase = '' }: { id: string; clase?: string }) => (
   <svg className={`ico ${clase}`} aria-hidden="true">
@@ -178,6 +179,58 @@ export const Cantidad = ({
         <Icono id="i-plus" clase="ico-s" />
       </button>
     </span>
+  );
+};
+
+/**
+ * El código del producto, en su chapita.
+ *
+ * Existe como componente para que sea el MISMO en todas las pantallas. Estaba
+ * escrito a mano en cinco lugares y faltaba en otros tantos —la lista de vender,
+ * el resumen del ingreso, las sugerencias de precio—, así que el mismo producto
+ * se veía distinto según desde dónde lo mirara. El código es como él los busca
+ * en su planilla: si no está, tiene que leer el nombre entero para reconocerlo.
+ *
+ * No dibuja nada si el producto no tiene código, así que se puede poner siempre
+ * sin preguntar antes.
+ */
+export const Codigo = ({ valor }: { valor?: string }) =>
+  valor ? <span className="cod">{valor}</span> : null;
+
+/**
+ * Paginado compacto, estilo bandeja de correo: "1-10 de 34" con ‹ y ›.
+ *
+ * Aparece SOLO cuando hay más de una página. Con ocho ventas, unos controles
+ * que dicen "1-8 de 8" son ruido: ocupan lugar y no hacen nada.
+ *
+ * Es paginado del lado del aparato y no del servidor, a propósito: la app tiene
+ * todo en memoria y funciona sin señal, así que paginar contra el servidor sería
+ * agregarle una espera —y una forma de fallar— a algo que ya está resuelto. Lo
+ * que resuelve es otra cosa: que el inicio no se convierta en una tira de
+ * doscientas filas.
+ */
+export const Paginado = ({
+  pagina, porPagina, total, alCambiar,
+}: {
+  pagina: number;
+  porPagina: number;
+  total: number;
+  alCambiar: (p: number) => void;
+}) => {
+  if (cuantasPaginas(total, porPagina) <= 1) return null;
+
+  const desde = pagina * porPagina + 1;
+  const hasta = Math.min(total, (pagina + 1) * porPagina);
+
+  return (
+    <div className="paginado">
+      <span className="paginado-et" role="status">{desde}-{hasta} de {total}</span>
+      <button type="button" className="paginado-btn" aria-label="Página anterior"
+        disabled={pagina === 0} onClick={() => alCambiar(pagina - 1)}>‹</button>
+      <button type="button" className="paginado-btn" aria-label="Página siguiente"
+        disabled={pagina >= cuantasPaginas(total, porPagina) - 1}
+        onClick={() => alCambiar(pagina + 1)}>›</button>
+    </div>
   );
 };
 

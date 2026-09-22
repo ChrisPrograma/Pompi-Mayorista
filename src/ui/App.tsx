@@ -32,7 +32,7 @@ import {
   type ProductoVista,
 } from './vistas.ts';
 import {
-  Alerta, BotonCompartir, Coach, Exito, Hoja, Icono, claseCategoria, plata,
+  Alerta, BotonCompartir, Coach, Codigo, Exito, Hoja, Icono, claseCategoria, plata,
   type DatosExito,
 } from './componentes.tsx';
 import { RECORRIDO, tour } from './recorrido.ts';
@@ -1269,7 +1269,7 @@ export const App = () => {
 
       {hojaProducto && (
         <Hoja alCerrar={() => setHojaProducto(null)}>
-          <h3>{hojaProducto.nombre}</h3>
+          <h3><Codigo valor={hojaProducto.codigo} />{hojaProducto.nombre}</h3>
           <p className="sub">{hojaProducto.variante}</p>
           <div className="kpi">
             <div><b>{hojaProducto.costoCent !== null ? plata(hojaProducto.costoCent) : '—'}</b><span>te cuesta</span></div>
@@ -1370,7 +1370,7 @@ export const App = () => {
               <div className="row" key={s.id}>
                 <span className="thumb"><Icono id="i-tag" /></span>
                 <span className="row-main">
-                  <b>{s.nombre}</b>
+                  <b><Codigo valor={estado.productos.find((p) => p.id === s.productoId)?.codigo} />{s.nombre}</b>
                   <span>te costaba {plata(s.costoAnteriorCent)} · ahora {plata(s.costoNuevoCent)}</span>
                 </span>
                 <span className="row-end">
@@ -1501,7 +1501,7 @@ export const App = () => {
                   <div className="row" key={it.id}>
                     <span className="row-main">
                       <b>
-                        {p?.codigo && <span className="cod">{p.codigo}</span>}
+                        <Codigo valor={p?.codigo} />
                         {p?.nombre ?? 'Producto'}
                       </b>
                       <span>{it.cantidad} × {plata(it.precioUnitarioCent)}</span>
@@ -1645,7 +1645,7 @@ export const App = () => {
                   <div className="row" key={it.id}>
                     <span className="row-main">
                       <b>
-                        {p?.codigo && <span className="cod">{p.codigo}</span>}
+                        <Codigo valor={p?.codigo} />
                         {p?.nombre ?? 'Producto'}
                       </b>
                       <span>{it.cantidad} × {plata(it.costoUnitarioCent)} de costo</span>
@@ -1809,7 +1809,7 @@ export const App = () => {
                 <span>
                   <b>Caballito de batalla</b>
                   <span>
-                    {caballito.codigo && <span className="cod">{caballito.codigo}</span>}
+                    <Codigo valor={caballito.codigo} />
                     {caballito.nombre}
                     {' · '}
                     {caballito.unidades === 1 ? '1 u. comprada' : `${caballito.unidades} u. compradas`}
@@ -2070,10 +2070,7 @@ export const App = () => {
                       onClick={() => { setFichaProv(null); acc.verProducto(x); }}>
                       <span className={`thumb ${claseCategoria(x.categoria)}`}><Icono id="i-box" /></span>
                       <span className="row-main">
-                        <b>
-                          {x.codigo && <span className="cod">{x.codigo}</span>}
-                          {x.nombre}
-                        </b>
+                        <b><Codigo valor={x.codigo} />{x.nombre}</b>
                         <span>{x.enStock} en stock</span>
                       </span>
                       <span className="row-end">
