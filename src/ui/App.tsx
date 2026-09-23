@@ -10,7 +10,8 @@ import type { Uuid } from '../domain/types.ts';
 import {
   activarCliente, activarProducto, activarProveedor, altaCliente, altaProducto, altaProveedor,
   anularCompra, anularVenta, aplicar, aplicarSugerencias, cambiarPrecio, clienteParecido, cobrar,
-  corregirIngreso, descartarSugerencias, editarCliente, editarProducto, editarProveedor, entrarMercaderia,
+  corregirCosto, corregirIngreso, costoDe, descartarSugerencias, editarCliente, editarProducto,
+  editarProveedor, entrarMercaderia, ultimaCompraDe,
   estadoVacio, precioDe, productoConCodigo, productoParecido, vender,
   type Ctx, type EstadoApp, type Resultado,
 } from '../app/estado.ts';
@@ -28,6 +29,7 @@ import { salir, sesionGuardada, type Sesion } from '../data/sesion.ts';
 import { PantallaAcceso } from './ingreso.tsx';
 import {
   caballitoDeBatalla, productosDelProveedor, reciboDeIngreso, reciboDeVenta, sugerenciasPendientes,
+  valorDelStock,
   ventasDelCliente, vistaDeudas, vistaIngresos, vistaProductos,
   type ProductoVista,
 } from './vistas.ts';
@@ -36,6 +38,8 @@ import {
   type DatosExito,
 } from './componentes.tsx';
 import { RECORRIDO, tour } from './recorrido.ts';
+import { borrarBorrador } from './borrador.ts';
+import { NEGOCIO } from './marca.ts';
 import {
   PantallaClientes, PantallaCosas, PantallaDeudas, PantallaHoy,
   PantallaIngreso, PantallaNumeros, PantallaProductos, PantallaProveedores,
@@ -72,7 +76,7 @@ const cola = new Cola(almacenCola, transporte);
  * pantalla no deja guardar — nunca un `NaN` que termine guardado como precio.
  */
 /** Cómo se llama el negocio. Va en el encabezado y arriba de cada comprobante. */
-const NEGOCIO = 'Pompi Mayorista';
+
 
 export const App = () => {
   const [estado, setEstado] = useState<EstadoApp | null>(null);
@@ -508,6 +512,8 @@ export const App = () => {
     vender: (clienteId, items, forma, cobradoCent) => {
       const c = ctx();
       const r = vender(estado, { clienteId, items, formaPago: forma, cobradoCent }, c);
+      // La venta se cerró: el borrador ya no es un borrador, es un hecho.
+      borrarBorrador();
       const v = r.ventas![0];
       const cliente = estado.clientes.find((x) => x.id === clienteId);
       const quedaDebiendo = Math.max(0, v.totalCent - v.cobradoCent);
@@ -864,6 +870,63 @@ export const App = () => {
         : 'Desde ahora es el precio que se usa al vender.',
       deltas: [{ etiqueta: 'Precio nuevo', valor: plata(precioCent) }],
     });
+  };
+
+  /**
+   * Corregir el costo de un producto.
+   *
+   * Por qué esto anula y vuelve a cargar una entrada en vez de "editar un
+   * campo": el costo NO es un campo del producto, es el costo unitario de su
+   * última entrada. Ver `corregirCosto` en `estado.ts`. Acá se despacha, se le
+   * cuenta qué pasó y se le muestra el capital nuevo, que es el número que
+   * cambia y por el que suele venir.
+   */
+  const guardarCosto = (productoId: Uuid) => {
+    const costoUnitarioCent = aCentavos(campo('costo'));
+    const antes = costoDe(estado, productoId);
+
+    guardando(() => {
+      const c = ctx();
+      const r = corregirCosto(estado, { productoId, costoUnitarioCent }, c);
+      // Igual que corregir un ingreso: primero anular la vieja, después la nueva.
+      const anulada = r.compras![0]!;
+      const nueva = r.compras![r.compras!.length - 1]!;
+
+      void despachar(r, [
+        {
+          tipo: 'anular_compra' as const, id: uuidv7(),
+          payload: { p_id: anulada.id, p_fecha: anulada.anuladaEn! },
+        },
+        {
+          tipo: 'registrar_compra' as const, id: nueva.id,
+          payload: {
+            p_negocio_id: estado.negocioId, p_proveedor_id: nueva.proveedorId,
+            p_items: nueva.items.map((i) => ({
+              producto_id: i.productoId, cantidad: i.cantidad,
+              costo_unitario_cent: i.costoUnitarioCent,
+            })),
+            p_condicion_pago: nueva.condicionPago, p_fecha: nueva.fecha,
+          },
+        },
+      ]);
+
+      setHojaPrecioDe(null);
+      setHojaProducto(null);
+
+      // El capital se recalcula sobre el estado YA corregido.
+      const capital = valorDelStock(aplicar(estado, r));
+      setExito({
+        titulo: 'Costo corregido',
+        monto: plata(costoUnitarioCent),
+        texto: antes !== null
+          ? `Figuraba en ${plata(antes)}. Se corrigió la entrada del ${fechaCorta(anulada.fecha)}: el stock no se movió y las ventas que ya hiciste no se tocan.`
+          : 'Desde ahora es el costo con el que se calcula tu ganancia.',
+        deltas: [
+          { etiqueta: 'Costo nuevo', valor: plata(costoUnitarioCent) },
+          { etiqueta: 'Capital en productos', valor: plata(capital.costoCent) },
+        ],
+      });
+    })();
   };
 
   // ---- proveedores ---------------------------------------------------------
@@ -1312,8 +1375,11 @@ export const App = () => {
           <div className="chips" style={{ marginTop: 14 }}>
             <button className="chip" onClick={() => {
               setCampo('precio', String((hojaProducto.precioCent ?? 0) / 100));
+              // El costo se precarga con el vigente: casi siempre va a corregir
+              // un dígito, no a escribirlo de cero.
+              setCampo('costo', String((hojaProducto.costoCent ?? 0) / 100));
               setHojaPrecioDe(hojaProducto.id);
-            }}>Cambiar el precio</button>
+            }}>Precios y costo</button>
             <button className="chip" onClick={() => abrirEditarProducto(hojaProducto.id)}>
               Corregir datos
             </button>
@@ -1331,6 +1397,8 @@ export const App = () => {
         const p = estado.productos.find((x) => x.id === hojaPrecioDe);
         const actual = precioDe(estado, hojaPrecioDe);
         const nuevo = aCentavos(campo('precio'));
+        const costoActual = costoDe(estado, hojaPrecioDe);
+        const ultimaEntrada = ultimaCompraDe(estado, hojaPrecioDe);
         return (
           <Hoja alCerrar={() => setHojaPrecioDe(null)}>
             <h3>Cambiar el precio</h3>
@@ -1355,6 +1423,45 @@ export const App = () => {
 
             <button className="btn lg block" disabled={nuevo <= 0}
               onClick={() => guardarPrecio(hojaPrecioDe)}>Guardar el precio nuevo</button>
+
+            {/*
+              * El COSTO, abajo y separado por una línea, porque es otra cosa.
+              *
+              * Cambiar el precio de venta abre una vigencia nueva y no toca el
+              * pasado. Corregir el costo, en cambio, arregla un dato que se
+              * cargó mal: corrige la entrada de la que sale ese costo. Son dos
+              * acciones distintas, con dos botones distintos, para que no se
+              * confundan — y por eso el costo no se guarda con el mismo botón.
+              */}
+            <div className="costo-bloque">
+              <p className="eyebrow">Corregir el precio de costo</p>
+              {ultimaEntrada ? (
+                <>
+                  <p className="sub" style={{ fontSize: 14.5, marginBottom: 10 }}>
+                    Hoy figura en <b>{costoActual !== null ? plata(costoActual) : '—'}</b>, de la
+                    entrada del {fechaCorta(ultimaEntrada.fecha)}. Si lo cargaste mal, corregilo acá:
+                    se arregla esa entrada, el stock no se mueve y las ventas hechas no se tocan.
+                  </p>
+                  <label className="campo">
+                    <span>¿Cuánto te costó de verdad, por unidad?</span>
+                    <input className="amount-in num" inputMode="decimal" value={campo('costo')}
+                      onChange={(ev: ChangeEvent<HTMLInputElement>) => setCampo('costo', ev.target.value)}
+                      aria-label="Costo nuevo" />
+                  </label>
+                  <button className="btn outline block" style={{ marginTop: 10 }}
+                    disabled={aCentavos(campo('costo')) <= 0 || aCentavos(campo('costo')) === costoActual}
+                    onClick={() => guardarCosto(hojaPrecioDe)}>
+                    Corregir el costo
+                  </button>
+                </>
+              ) : (
+                <p className="sub" style={{ fontSize: 14.5 }}>
+                  Este producto todavía no tiene ninguna entrada cargada, y el costo sale de ahí.
+                  Cargala desde <b>Me llegó mercadería</b>.
+                </p>
+              )}
+            </div>
+
             <button className="btn outline block" style={{ marginTop: 9 }}
               onClick={() => setHojaPrecioDe(null)}>Cancelar</button>
           </Hoja>

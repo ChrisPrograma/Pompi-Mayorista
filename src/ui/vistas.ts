@@ -20,6 +20,7 @@ import {
 import { calcularStock } from '../domain/stock.ts';
 import type { Compra, Uuid, Venta } from '../domain/types.ts';
 import type { DatosRecibo } from './recibo.ts';
+import type { FilaDePlanilla, LineaDeLista } from './exportar.ts';
 import { costoDe, historialPrecios, precioDe, type EstadoApp } from '../app/estado.ts';
 
 /*
@@ -735,3 +736,37 @@ export const valorDelStock = (e: EstadoApp): ValorDelStock => {
     sinPrecio: conStock.filter((p) => !p.precioCent).length,
   };
 };
+
+/**
+ * Las líneas de la lista de precios que le manda a los comercios.
+ *
+ * Devuelve `LineaDeLista`, que tiene TRES campos y ninguno es el costo. No es
+ * que la lista "no muestre" el costo: es que el dato no sale de acá. Ver la nota
+ * de arriba de `exportar.ts`.
+ *
+ * Solo entra lo que se puede vender: activo y con precio. Un producto sin precio
+ * en una lista de precios sería una fila que no dice nada, y encima invita a que
+ * el comercio pregunte por algo que él todavía no definió.
+ */
+export const lineasDeLista = (e: EstadoApp): LineaDeLista[] =>
+  vistaProductos(e)
+    .filter((p): p is ProductoVista & { precioCent: Cent } => p.precioCent !== null)
+    .map((p) => ({
+      ...(p.codigo ? { codigo: p.codigo } : {}),
+      nombre: [p.nombre, p.variante].filter(Boolean).join(' '),
+      precioCent: p.precioCent,
+    }));
+
+/**
+ * Las filas de la planilla de control. Esta es la privada: va todo, costo
+ * incluido, porque se la baja él a su computadora.
+ */
+export const filasDePlanilla = (e: EstadoApp): FilaDePlanilla[] =>
+  vistaProductos(e).map((p) => ({
+    ...(p.codigo ? { codigo: p.codigo } : {}),
+    nombre: [p.nombre, p.variante].filter(Boolean).join(' '),
+    ...(p.categoria ? { rubro: p.categoria } : {}),
+    stock: p.enStock,
+    precioCent: p.precioCent,
+    costoCent: p.costoCent,
+  }));

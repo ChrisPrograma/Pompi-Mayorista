@@ -179,6 +179,23 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .qnum{width:40px;min-width:40px;font-size:16px}
   .qbtn{width:31px;height:31px}
 }
+/* Las dos salidas de "Mis productos": la lista pública y la planilla privada.
+   Los dos botones en una fila, y abajo la aclaración de cuál lleva qué. */
+.salidas{display:flex;flex-wrap:wrap;gap:9px;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-m);padding:12px 13px 13px}
+/* Uno abajo del otro y a lo ancho: con los dos en la misma fila, "Compartir
+   lista de precios" se partía en tres renglones en un teléfono. */
+.salidas .btn{flex:1 1 100%;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  font-size:15.5px;padding:12px 13px}
+.salidas-nota{flex:1 1 100%;margin:2px 0 0;font-size:14px;color:var(--ink-3);line-height:1.35}
+.salidas-nota b{color:var(--ink-2)}
+.salidas-ok{flex:1 1 100%;margin:0;font-size:14.5px;color:var(--ok);font-weight:600}
+
+/* El costo, en la hoja de precios: separado por una línea porque es otra cosa
+   —corrige un dato cargado mal— y no un precio nuevo. */
+.costo-bloque{margin-top:18px;padding-top:15px;border-top:1px solid var(--line)}
+.costo-bloque .eyebrow{display:block;margin-bottom:8px}
+
 /* Paginado compacto, al pie de las listas del inicio. */
 .paginado{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:2px}
 .paginado-et{font-size:14px;color:var(--ink-3);font-variant-numeric:tabular-nums;margin-right:2px}
@@ -529,7 +546,24 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
   /* Los carteles hablan de toda la pantalla, no de una columna. Metidos en una
      sola quedaban con dos columnas vacías al lado, como si faltara algo. */
   .view > .alert,
-  .view > div:has(> .alert){ grid-column:1/-1 }
+  .view > div:has(> .alert),
+  /*
+   * El buscador y el orden encabezan la lista: metidos en una columna quedaban
+   * a media pantalla, desalineados de las filas que filtran, y parecía que
+   * buscaban otra cosa. Van a lo ancho y arriba de todo, igual que en el
+   * teléfono. Lo mismo con el paginado, que cierra la lista, y con los bloques
+   * que resumen la pantalla entera.
+   */
+  .view > .barra,
+  .view > .buscador,
+  .view > div:has(> .barra),
+  .view > div:has(> .buscador),
+  .view > .orden,
+  .view > .orden-et,
+  .view > .paginado,
+  .view > .capital,
+  .view > .capital-nota,
+  .view > .salidas{ grid-column:1/-1 }
 
   /* "Mis cosas" ya es una grilla propia: que use todo el ancho y respire. */
   .view > .hub{grid-column:1/-1;grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}

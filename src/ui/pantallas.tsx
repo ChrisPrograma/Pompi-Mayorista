@@ -1,11 +1,13 @@
-import { useMemo, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { aCentavos, pesos, type Cent } from '../domain/money.ts';
-import { fechaCorta, nombreDelRango, type Rango } from '../domain/fechas.ts';
+import { diaLocal, fechaCorta, fechaLarga, nombreDelRango, type Rango } from '../domain/fechas.ts';
 import type { Uuid } from '../domain/types.ts';
 import type { EstadoApp } from '../app/estado.ts';
 import {
   sugerenciasPendientes,
   cuantosActivos,
+  filasDePlanilla,
+  lineasDeLista,
   valorDelStock,
   vistaDeudas,
   vistaHoy,
@@ -26,6 +28,10 @@ import {
   Alerta, Cantidad, Codigo, Icono, Paginado, claseCategoria, plata, plataCorta,
 } from './componentes.tsx';
 import { POR_PAGINA, paginaDe } from './paginado.ts';
+import { borrarBorrador, guardarBorrador, leerBorrador } from './borrador.ts';
+import { bajarTexto, compartirTexto } from './compartir.ts';
+import { conBom, listaDePreciosTexto, nombreDeArchivo, planillaCsv } from './exportar.ts';
+import { NEGOCIO } from './marca.ts';
 /*
  * `tour` marca los elementos que el recorrido puede señalar. El import cruzado
  * con recorrido.ts no es un ciclo real: lo que va en la otra dirección es solo
@@ -551,9 +557,32 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
 // Vender
 // ---------------------------------------------------------------------------
 export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
-  const [paso, setPaso] = useState(clienteInicial ? 2 : 1);
-  const [clienteId, setClienteId] = useState<Uuid | null>(clienteInicial ?? null);
-  const [items, setItems] = useState<Record<Uuid, number>>({});
+  /*
+   * El pedido a medio armar sobrevive a irse de la pantalla.
+   *
+   * Se lee UNA sola vez, al montar, y de ahí en más manda el estado de React.
+   * Leerlo en cada dibujado pisaría lo que está tocando en ese momento. El
+   * comercio que venía del alta (`clienteInicial`) gana sobre el borrador: si
+   * acaba de cargar un comercio para venderle, es a ese y no al de ayer.
+   */
+  const borrador = useMemo(
+    () => (clienteInicial ? null : leerBorrador(hoy)),
+    // Solo al montar: `hoy` cambia de minuto a minuto y volvería a leer siempre.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  // El comercio del borrador puede haberse archivado desde ayer.
+  const clienteDelBorrador = borrador
+    && estado.clientes.some((c) => c.id === borrador.clienteId && c.activo)
+    ? borrador.clienteId : null;
+
+  const [paso, setPaso] = useState(clienteInicial || clienteDelBorrador ? 2 : 1);
+  const [clienteId, setClienteId] = useState<Uuid | null>(
+    clienteInicial ?? clienteDelBorrador ?? null,
+  );
+  const [items, setItems] = useState<Record<Uuid, number>>(
+    clienteDelBorrador ? borrador!.items : {},
+  );
   /*
    * Las tres opciones son del cliente, y están puestas en el orden en el que
    * pasan de verdad: casi siempre le pagan todo, a veces una parte, y de vez en
@@ -566,6 +595,27 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
   const [entrega, setEntrega] = useState('');
   /** Lo que escribió en el buscador del paso 2. */
   const [q, setQ] = useState('');
+
+  /*
+   * Se guarda en cada cambio del pedido. Es una escritura chica a `localStorage`
+   * y pasa solo cuando toca un + o un −, así que no hay nada que optimizar.
+   * Cuando el pedido queda vacío, `guardarBorrador` borra en vez de guardar un
+   * carrito vacío.
+   */
+  useEffect(() => {
+    guardarBorrador({ clienteId, items }, hoy);
+  }, [clienteId, items, hoy]);
+
+  /** Tirar el pedido y arrancar de cero. */
+  const vaciar = () => {
+    setItems({});
+    setForma(null);
+    setEntrega('');
+    setQ('');
+    borrarBorrador();
+    setClienteId(null);
+    setPaso(1);
+  };
 
   const productos = useMemo(() => vistaParaVender(estado), [estado]);
   /*
@@ -687,6 +737,18 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
             </div>
           ))}
         </div>
+
+        {/*
+          * Vaciar el pedido. Está abajo de la lista y no arriba: es la acción
+          * que menos se usa y la única que destruye trabajo, así que no puede
+          * estar donde se toca sin querer.
+          */}
+        {unidades > 0 && (
+          <button className="btn ghost block" style={{ color: 'var(--bad)' }}
+            onClick={vaciar}>
+            Vaciar el pedido y empezar de nuevo
+          </button>
+        )}
 
         <div className="cartbar">
           <span className="tot">
@@ -945,8 +1007,45 @@ export const PantallaCosas = ({ estado, acc }: Props) => {
 // ---------------------------------------------------------------------------
 // Productos
 // ---------------------------------------------------------------------------
-export const PantallaProductos = ({ estado, acc }: Props) => {
+export const PantallaProductos = ({ estado, hoy, acc }: Props) => {
   const capital = useMemo(() => valorDelStock(estado), [estado]);
+  /** Cuántos se pueden listar: sin precio no hay lista de precios que mandar. */
+  const conPrecio = useMemo(() => lineasDeLista(estado).length, [estado]);
+  const [saliendo, setSaliendo] = useState<'lista' | 'planilla' | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  const compartirLista = async () => {
+    setSaliendo('lista'); setAviso(null);
+    const texto = listaDePreciosTexto(lineasDeLista(estado), NEGOCIO, fechaLarga(hoy));
+    const r = await compartirTexto(
+      texto,
+      `Lista de precios · ${NEGOCIO}`,
+      nombreDeArchivo(`lista-${NEGOCIO}`, diaLocal(hoy), 'txt'),
+    );
+    setSaliendo(null);
+    setAviso(
+      r === 'copiado' ? 'La lista quedó copiada: pegala en el chat de WhatsApp.'
+        : r === 'descargado' ? 'Se bajó la lista como archivo de texto.'
+        : r === 'falló' ? 'No se pudo compartir la lista en este navegador.'
+        : null,
+    );
+  };
+
+  const bajarPlanilla = () => {
+    setSaliendo('planilla'); setAviso(null);
+    try {
+      bajarTexto(
+        nombreDeArchivo(`productos-${NEGOCIO}`, diaLocal(hoy), 'csv'),
+        conBom(planillaCsv(filasDePlanilla(estado))),
+        'text/csv;charset=utf-8',
+      );
+      setAviso('Se bajó la planilla. Abrila con Excel: ya viene en columnas.');
+    } catch {
+      setAviso('No se pudo bajar la planilla en este navegador.');
+    }
+    setSaliendo(null);
+  };
+
   const [orden, setOrden] = useState<OrdenProducto>('nombre');
   const [dir, setDir] = useState<Direccion>(DIRECCION_INICIAL.nombre);
   const [q, setQ] = useState('');
@@ -1000,6 +1099,37 @@ export const PantallaProductos = ({ estado, acc }: Props) => {
             </p>
           )}
         </>
+      )}
+
+      {/*
+        * Dos salidas, y la diferencia entre las dos es lo único que importa acá:
+        *
+        *  - **La lista de precios es PÚBLICA.** La recibe un comercio por
+        *    WhatsApp y de ahí va a donde sea. Lleva código, nombre y precio de
+        *    venta, y nada más — ni costo, ni ganancia, ni stock. Que un comercio
+        *    vea cuánto le cuesta cada cosa no se puede deshacer.
+        *  - **La planilla es PRIVADA.** Se la baja él a la computadora y ahí sí
+        *    va todo.
+        *
+        * Están juntas a propósito, con el candado y el texto que dice cuál es
+        * cuál: la peor versión de esto sería que un día mande la equivocada.
+        */}
+      {conPrecio > 0 && (
+        <div className="salidas">
+          <button className="btn outline" onClick={compartirLista} disabled={saliendo !== null}>
+            <Icono id="i-share" clase="ico-s" />
+            {saliendo === 'lista' ? 'Preparando…' : 'Compartir lista de precios'}
+          </button>
+          <button className="btn outline" onClick={bajarPlanilla} disabled={saliendo !== null}>
+            <Icono id="i-box" clase="ico-s" />
+            Exportar a Excel
+          </button>
+          <p className="salidas-nota">
+            La lista que se comparte lleva <b>solo código, nombre y precio de venta</b>.
+            La planilla, con costos y stock, se baja a tu computadora y no se comparte.
+          </p>
+          {aviso && <p className="salidas-ok" role="status">{aviso}</p>}
+        </div>
       )}
 
       <button className="second-action" {...tour('producto-nuevo')} onClick={acc.nuevoProducto}>

@@ -8,10 +8,12 @@
 
 import { describe, expect, it } from 'vitest';
 import { pesos } from '../../domain/money.ts';
+import { stockDe } from '../../domain/stock.ts';
 import { POR_PAGINA, cuantasPaginas, paginaDe } from '../../ui/paginado.ts';
 import { valorDelStock } from '../../ui/vistas.ts';
 import {
-  altaProducto, aplicar, entrarMercaderia, estadoVacio, vender, type Ctx, type EstadoApp,
+  altaProducto, aplicar, corregirCosto, costoDe, entrarMercaderia, estadoVacio,
+  ultimaCompraDe, vender, type Ctx, type EstadoApp,
 } from '../estado.ts';
 import { idsSecuenciales } from '../semilla.ts';
 
@@ -158,5 +160,122 @@ describe('el paginado de las listas del inicio', () => {
     // El control que importa: juntando todas las páginas sale la lista original.
     const juntas = [0, 1, 2, 3].flatMap((n) => paginaDe(lista, n, POR_PAGINA));
     expect(juntas).toEqual(lista);
+  });
+});
+
+describe('corregir el precio de costo', () => {
+  /*
+   * "Editar el costo" no existe como campo, y no es una limitación: el costo es
+   * el de la última entrada, que es un hecho con fecha y proveedor. Corregirlo
+   * corrige ESA entrada. Estos tests fijan las dos cosas que tienen que pasar y
+   * las tres que NO.
+   */
+  const armar = () => {
+    const c = ctx('q');
+    let e = estadoVacio('n1', 'l1');
+    e = aplicar(e, altaProducto(e, { nombre: 'Pretal', precioCent: pesos(6500) }, c));
+    const producto = e.productos[0]!.id;
+    e = aplicar(e, entrarMercaderia(e, {
+      proveedorId: 'prov1',
+      // Le erró un cero: cargó 400 donde iban 4.000.
+      items: [{ productoId: producto, cantidad: 10, costoUnitarioCent: pesos(400) }],
+      condicionPago: 'cuenta',
+    }, c));
+    return { e, c, producto };
+  };
+
+  it('el costo pasa a ser el corregido', () => {
+    let { e, c, producto } = armar();
+    expect(costoDe(e, producto)).toBe(pesos(400));
+
+    e = aplicar(e, corregirCosto(e, { productoId: producto, costoUnitarioCent: pesos(4000) }, c));
+    expect(costoDe(e, producto)).toBe(pesos(4000));
+  });
+
+  it('el capital en productos se recalcula solo', () => {
+    // Es el número por el que él viene a corregir el costo.
+    let { e, c, producto } = armar();
+    expect(valorDelStock(e).costoCent).toBe(pesos(4000));    // 10 × 400, mal
+
+    e = aplicar(e, corregirCosto(e, { productoId: producto, costoUnitarioCent: pesos(4000) }, c));
+    expect(valorDelStock(e).costoCent).toBe(pesos(40_000));  // 10 × 4.000, bien
+  });
+
+  it('el STOCK no se mueve', () => {
+    /*
+     * Lo más importante. Corregir el costo anula la entrada y la vuelve a
+     * cargar: si las cantidades no fueran idénticas, arreglar un precio le
+     * cambiaría el inventario.
+     */
+    let { e, c, producto } = armar();
+    e = aplicar(e, corregirCosto(e, { productoId: producto, costoUnitarioCent: pesos(4000) }, c));
+    expect(stockDe(e.movimientos, producto)).toBe(10);
+  });
+
+  it('la deuda con el proveedor queda con el total corregido', () => {
+    let { e, c, producto } = armar();
+    const deuda = (x: EstadoApp) => x.compras
+      .filter((k) => k.condicionPago === 'cuenta' && !k.anuladaEn)
+      .reduce((a, k) => a + k.totalCent, 0);
+
+    expect(deuda(e)).toBe(pesos(4000));
+    e = aplicar(e, corregirCosto(e, { productoId: producto, costoUnitarioCent: pesos(4000) }, c));
+    expect(deuda(e)).toBe(pesos(40_000));
+  });
+
+  it('no toca el costo de los otros productos de esa misma entrada', () => {
+    const c = ctx('w');
+    let e = estadoVacio('n1', 'l1');
+    e = aplicar(e, altaProducto(e, { nombre: 'Pretal', precioCent: pesos(6500) }, c));
+    e = aplicar(e, altaProducto(e, { nombre: 'Pelota', precioCent: pesos(1800) }, c));
+    const [pretal, pelota] = e.productos.map((p) => p.id) as [string, string];
+    e = aplicar(e, entrarMercaderia(e, {
+      proveedorId: 'prov1',
+      items: [
+        { productoId: pretal, cantidad: 10, costoUnitarioCent: pesos(400) },
+        { productoId: pelota, cantidad: 5, costoUnitarioCent: pesos(900) },
+      ],
+      condicionPago: 'contado',
+    }, c));
+
+    e = aplicar(e, corregirCosto(e, { productoId: pretal, costoUnitarioCent: pesos(4000) }, c));
+
+    expect(costoDe(e, pretal)).toBe(pesos(4000));
+    expect(costoDe(e, pelota)).toBe(pesos(900));     // intacto
+    expect(stockDe(e.movimientos, pelota)).toBe(5);  // y su stock también
+  });
+
+  it('una venta ya hecha conserva el costo con el que se hizo', () => {
+    /*
+     * Congelado en el renglón de la venta. Lo que ganó ese día no cambia porque
+     * después se corrija una carga: si cambiara, la ganancia del mes pasado se
+     * movería sola.
+     */
+    let { e, c, producto } = armar();
+    e = aplicar(e, vender(e, {
+      clienteId: 'c1', items: [{ productoId: producto, cantidad: 2 }],
+      forma: 'efectivo', cobradoCent: pesos(13_000),
+    }, c));
+    const antes = JSON.stringify(e.ventas[0]);
+
+    e = aplicar(e, corregirCosto(e, { productoId: producto, costoUnitarioCent: pesos(4000) }, c));
+    expect(JSON.stringify(e.ventas[0])).toBe(antes);
+  });
+
+  it('sin ninguna entrada cargada, avisa de dónde sale el costo', () => {
+    const c = ctx('z');
+    let e = estadoVacio('n1', 'l1');
+    e = aplicar(e, altaProducto(e, { nombre: 'Recién cargado', precioCent: pesos(1000) }, c));
+    const producto = e.productos[0]!.id;
+
+    expect(() => corregirCosto(e, { productoId: producto, costoUnitarioCent: pesos(500) }, c))
+      .toThrow('entrada');
+    expect(ultimaCompraDe(e, producto)).toBe(null);
+  });
+
+  it('un costo en cero o negativo no se guarda', () => {
+    const { e, c, producto } = armar();
+    expect(() => corregirCosto(e, { productoId: producto, costoUnitarioCent: 0 }, c)).toThrow();
+    expect(() => corregirCosto(e, { productoId: producto, costoUnitarioCent: -100 }, c)).toThrow();
   });
 });

@@ -925,6 +925,67 @@ export const corregirIngreso = (
   };
 };
 
+/** La última entrada NO anulada que incluye a ese producto. De ahí sale su costo. */
+export const ultimaCompraDe = (e: EstadoApp, productoId: Uuid): Compra | null => {
+  const suyas = e.compras
+    .filter((c) => !c.anuladaEn && c.items.some((it) => it.productoId === productoId))
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+  return suyas[0] ?? null;
+};
+
+/**
+ * Corregir el precio de costo de un producto.
+ *
+ * "Editar el costo" no existe como operación, y no es una limitación: **el costo
+ * no es un campo del producto**. Es el costo unitario de su última entrada no
+ * anulada, que es un hecho con fecha, proveedor y cantidad. Si fuera un campo
+ * editable, cambiarlo reescribiría el pasado — la ganancia de las ventas viejas
+ * se calcularía con un costo que en ese momento no era ese.
+ *
+ * Así que corregir el costo es corregir LA ENTRADA de la que sale: se anula y se
+ * vuelve a cargar con el costo bueno y las mismas cantidades. Es exactamente lo
+ * que hace `corregirIngreso`, con dos diferencias que importan:
+ *
+ *  - **El stock no se mueve**: entran los mismos productos con las mismas
+ *    cantidades, así que el ajuste negativo y el positivo se cancelan.
+ *  - **Las ventas ya hechas no cambian**: su costo se congeló en el renglón.
+ *    Lo que cambia es de acá en adelante — y el capital en productos, que se
+ *    calcula con el costo vigente.
+ *
+ * Si el producto no tiene ninguna entrada, no hay nada que corregir: el costo se
+ * carga entrando la mercadería. Tira con ese texto, que es el que ve el usuario.
+ */
+export const corregirCosto = (
+  e: EstadoApp,
+  args: { productoId: Uuid; costoUnitarioCent: Cent },
+  ctx: Ctx,
+): Resultado => {
+  if (args.costoUnitarioCent <= 0) throw new Error('El costo tiene que ser mayor que cero');
+
+  const compra = ultimaCompraDe(e, args.productoId);
+  if (!compra) {
+    throw new Error(
+      'Este producto todavía no tiene ninguna entrada cargada, y el costo sale de ahí. '
+      + 'Cargala desde "Me llegó mercadería".',
+    );
+  }
+
+  return corregirIngreso(e, {
+    compraId: compra.id,
+    // Una compra de la migración 008 puede no tener proveedor: se respeta.
+    proveedorId: compra.proveedorId!,
+    items: compra.items.map((it) => ({
+      productoId: it.productoId,
+      cantidad: it.cantidad,
+      // Solo cambia el costo del producto que se está corrigiendo.
+      costoUnitarioCent: it.productoId === args.productoId
+        ? args.costoUnitarioCent
+        : it.costoUnitarioCent,
+    })),
+    condicionPago: compra.condicionPago,
+  }, ctx);
+};
+
 /** Registrar un cobro. */
 export const cobrar = (
   e: EstadoApp,
