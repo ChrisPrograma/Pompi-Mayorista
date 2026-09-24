@@ -170,7 +170,13 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
   padding:6px 2px;height:34px;color:var(--ink);
   -moz-appearance:textfield;appearance:textfield;
 }
+/* El campo pasó a ser `type="text"` (ver cantidad.ts), así que las flechitas ya
+   no existen; las reglas quedan por si alguna vez vuelve a ser numérico. */
 .qnum::-webkit-outer-spin-button,.qnum::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+/* En cero el campo va vacío y muestra el 0 de fondo: es lo que evita que lo
+   tipeado se pegue al cero que estaba escrito. Se ve apagado para que se lea
+   como "acá va la cantidad" y no como un cero cargado. */
+.qnum::placeholder{color:var(--ink-3);opacity:.55}
 .qnum:focus{border-color:var(--brand);outline:none}
 /* En teléfonos angostos el selector le come el ancho al nombre del producto, y
    un nombre largo se parte a la mitad de una palabra. Acá el campo y los botones

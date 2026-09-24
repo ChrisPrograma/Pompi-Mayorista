@@ -2,6 +2,7 @@ import { useEffect, useState, type ChangeEvent, type FocusEvent, type ReactNode 
 import { formatear, type Cent } from '../domain/money.ts';
 import { compartirArchivo, reciboComoArchivo, resumenDelRecibo, type DatosRecibo } from './recibo.ts';
 import { cuantasPaginas } from './paginado.ts';
+import { acotar, alEnfocar, textoDeCantidad, textoParaMostrar, valorDeCantidad } from './cantidad.ts';
 
 export const Icono = ({ id, clase = '' }: { id: string; clase?: string }) => (
   <svg className={`ico ${clase}`} aria-hidden="true">
@@ -113,23 +114,13 @@ export const Exito = ({ datos, alCerrar }: { datos: DatosExito; alCerrar: () => 
 /**
  * El selector de cantidad: menos, el número, más.
  *
- * El número dejó de ser un texto y pasó a ser un campo que se puede escribir.
- * Motivo del cliente, y es de los pedidos más sensatos que hizo: cargar 100
- * unidades de una entrada eran cien toques en el +. Los botones siguen igual,
- * porque para una venta de tres collares tocar dos veces es más rápido que
- * escribir.
+ * El número es un campo escribible porque cargar 100 unidades de una entrada no
+ * puede ser cien toques en el +. Los botones siguen ahí: para tres collares,
+ * tocar dos veces es más rápido que escribir.
  *
- * Tres detalles que hacen que un campo numérico no moleste:
- *
- *  - **Se escribe en un estado de texto, no en el número.** Si cada tecla se
- *    convirtiera a número, borrar el último dígito daría `NaN` → 0, y el campo
- *    volvería a "0" en la mitad de lo que está escribiendo. Acá el vacío se
- *    permite mientras tenga el foco, y al salir se acomoda solo.
- *  - **Mientras el usuario NO está escribiendo, manda el valor de afuera**, que
- *    es lo que permite que el botón + actualice el campo, y que "vaciar todo"
- *    lo vuelva a cero.
- *  - **Se recorta contra el mínimo y el máximo**, así no hay forma de anotar
- *    una cantidad negativa escribiéndola a mano.
+ * TODA la lógica del campo está en `cantidad.ts`, con la explicación del bug que
+ * arregló —cargar 6 y que quedaran 60— y por qué el campo va VACÍO cuando la
+ * cantidad es cero. Acá solo se dibuja.
  */
 export const Cantidad = ({
   valor, alCambiar, maximo, minimo = 0, etiqueta = 'Cantidad',
@@ -141,17 +132,16 @@ export const Cantidad = ({
   /** Para el lector de pantalla: "Cantidad de Collar reflectivo". */
   etiqueta?: string;
 }) => {
+  /** Lo que está escribiendo. `null` = no está tocando el campo. */
   const [escribiendo, setEscribiendo] = useState<string | null>(null);
 
-  const acotar = (n: number) =>
-    Math.max(minimo, maximo !== undefined ? Math.min(maximo, n) : n);
-
-  const alTipear = (texto: string) => {
-    // Solo dígitos: ni signo menos, ni coma, ni "e". Son unidades enteras.
-    const limpio = texto.replace(/[^0-9]/g, '');
-    setEscribiendo(limpio);
-    if (limpio === '') return;            // todavía está borrando, no es un cero
-    alCambiar(acotar(Number(limpio)));
+  const alTipear = (crudo: string) => {
+    const texto = textoDeCantidad(crudo);
+    setEscribiendo(texto);
+    const n = valorDeCantidad(texto);
+    // Vacío es "todavía nada", no cero: si mandara cero, borrar para corregir
+    // sacaría el producto del pedido en el medio de la corrección.
+    if (n !== null) alCambiar(acotar(n, minimo, maximo));
   };
 
   return (
@@ -161,16 +151,35 @@ export const Cantidad = ({
         <Icono id="i-minus" clase="ico-s" />
       </button>
       <input
-        className="qnum" type="number" inputMode="numeric" min={minimo}
-        {...(maximo !== undefined ? { max: maximo } : {})}
+        className="qnum"
+        /*
+         * `text` y no `number`, a propósito. En un campo numérico `select()` no
+         * hace nada en varios navegadores de teléfono —la especificación no
+         * define selección ahí—, y eso es lo que hacía que lo tipeado se pegara
+         * al cero que ya estaba. Ver `cantidad.ts`.
+         */
+        type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off"
         aria-label={etiqueta}
-        value={escribiendo ?? String(valor)}
-        onFocus={(ev: FocusEvent<HTMLInputElement>) => ev.target.select()}
+        placeholder="0"
+        value={escribiendo ?? textoParaMostrar(valor)}
+        /*
+          * Al entrar, el campo se vacía. No alcanza con `select()`: en el
+          * teléfono del cliente no seleccionaba nada y lo tipeado se insertaba
+          * al lado de lo que ya había —corregir un 6 escribiendo 55 daba 556—.
+          * Vacío, lo que escriba siempre reemplaza.
+          */
+        onFocus={(ev: FocusEvent<HTMLInputElement>) => {
+          setEscribiendo(alEnfocar());
+          ev.target.select();
+        }}
         onChange={(ev: ChangeEvent<HTMLInputElement>) => alTipear(ev.target.value)}
         onBlur={() => {
-          // Si se fue dejándolo vacío, queda en el mínimo: un campo en blanco no
-          // es una cantidad, y dejarlo así rompería el total.
-          if (escribiendo === '') alCambiar(minimo);
+          /*
+           * Se fue sin escribir nada: queda el número que estaba. Un campo en
+           * blanco es "no terminé", no "cero" — y como al entrar se vacía, un
+           * blanco al salir casi siempre es eso. Para sacar el producto del
+           * pedido están el botón − y escribir un 0, que sí vale.
+           */
           setEscribiendo(null);
         }}
       />
@@ -182,18 +191,6 @@ export const Cantidad = ({
   );
 };
 
-/**
- * El código del producto, en su chapita.
- *
- * Existe como componente para que sea el MISMO en todas las pantallas. Estaba
- * escrito a mano en cinco lugares y faltaba en otros tantos —la lista de vender,
- * el resumen del ingreso, las sugerencias de precio—, así que el mismo producto
- * se veía distinto según desde dónde lo mirara. El código es como él los busca
- * en su planilla: si no está, tiene que leer el nombre entero para reconocerlo.
- *
- * No dibuja nada si el producto no tiene código, así que se puede poner siempre
- * sin preguntar antes.
- */
 export const Codigo = ({ valor }: { valor?: string }) =>
   valor ? <span className="cod">{valor}</span> : null;
 
