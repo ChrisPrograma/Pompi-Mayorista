@@ -28,7 +28,11 @@
 -- 1 ── Cantidades sospechosamente grandes -----------------------------------
 -- El umbral son 500 unidades de un mismo producto en una sola operación. Si él
 -- vende de a más, subilo; lo que importa es que salten las de 10× y 100×.
-select 'venta' as que, v.fecha, c.nombre as con_quien, p.nombre as producto,
+--
+-- MIRÁ LA COLUMNA `anulada_en` ANTES DE ALARMARTE: si tiene fecha, esa
+-- operación ya fue anulada y su asiento compensatorio ya está hecho. Aparece
+-- igual porque nada se borra, pero no hay nada que arreglar.
+select 'venta' as que, v.fecha, v.anulada_en, c.nombre as con_quien, p.nombre as producto,
        vi.cantidad, (vi.precio_unitario_cent / 100.0) as precio, v.id
   from venta_items vi
   join ventas v    on v.id = vi.venta_id
@@ -36,7 +40,7 @@ select 'venta' as que, v.fecha, c.nombre as con_quien, p.nombre as producto,
   left join clientes c on c.id = v.cliente_id
  where vi.cantidad > 500
 union all
-select 'compra', co.fecha, pr.nombre, p.nombre,
+select 'compra', co.fecha, co.anulada_en, pr.nombre, p.nombre,
        ci.cantidad, (ci.costo_unitario_cent / 100.0), co.id
   from compra_items ci
   join compras co  on co.id = ci.compra_id

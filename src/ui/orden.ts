@@ -50,7 +50,7 @@ const plano = (t?: string): string =>
  * "Pet Shop Huellitas". Y busca cada palabra por separado, así "shop hue"
  * también lo encuentra aunque estén al revés.
  */
-const coincide = (busqueda: string, campos: (string | undefined)[]): boolean => {
+export const coincide = (busqueda: string, campos: (string | undefined)[]): boolean => {
   const q = plano(busqueda);
   if (!q) return true;
   const heno = campos.map(plano).join(' ');

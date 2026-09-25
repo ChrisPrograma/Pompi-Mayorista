@@ -11,12 +11,16 @@
 
 import { describe, expect, it } from 'vitest';
 import { ANCLAS, RECORRIDO, tour } from '../../ui/recorrido.ts';
+/*
+ * La lista de verdad, importada — no copiada. Copiada, agregar una pantalla y
+ * olvidarse de actualizarla deja este test pasando mientras miente.
+ */
+import { RUTAS } from '../../ui/rutas.ts';
 import { ventasDelCliente } from '../../ui/vistas.ts';
 import { estadoVacio, type EstadoApp } from '../estado.ts';
 import { pesos, type Cent } from '../../domain/money.ts';
 import type { Venta } from '../../domain/types.ts';
 
-const RUTAS = ['hoy', 'vender', 'deudas', 'cosas', 'productos', 'clientes', 'ingreso', 'proveedores', 'numeros'];
 
 describe('el recorrido apunta a cosas que existen', () => {
   it('cada paso que destaca algo apunta a un ancla declarada', () => {

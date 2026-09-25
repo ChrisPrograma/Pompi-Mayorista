@@ -41,7 +41,7 @@ import { RECORRIDO, tour } from './recorrido.ts';
 import { borrarBorrador } from './borrador.ts';
 import { NEGOCIO } from './marca.ts';
 import {
-  PantallaClientes, PantallaCosas, PantallaDeudas, PantallaHoy,
+  PantallaActividad, PantallaClientes, PantallaCosas, PantallaDeudas, PantallaHoy,
   PantallaIngreso, PantallaNumeros, PantallaProductos, PantallaProveedores,
   PantallaVender, type Acciones, type CorreccionIngreso, type Ruta,
 } from './pantallas.tsx';
@@ -57,6 +57,9 @@ const TABS: { id: Ruta; icono: string; texto: string; venta?: boolean }[] = [
 const PADRE: Partial<Record<Ruta, Ruta>> = {
   productos: 'cosas', clientes: 'cosas',
   ingreso: 'cosas', proveedores: 'cosas',
+  // El historial completo se entra desde el inicio: la pestaña que queda
+  // encendida abajo tiene que seguir siendo "Hoy".
+  actividad: 'hoy',
 };
 
 /** Días como los nombra él, no como los numera el sistema. */
@@ -421,6 +424,18 @@ export const App = () => {
     // No se perdió nada — el ingreso original nunca se tocó.
     if (r !== 'ingreso') setCorrigiendo(null);
     setRuta(r);
+    /*
+     * Arriba de todo, siempre.
+     *
+     * Sin esto, entrar a una pantalla desde el medio de otra la abre a mitad de
+     * camino: se toca "Consultar todas" después de bajar en el inicio y el
+     * historial arranca por la quinta fila, sin el buscador ni los filtros a la
+     * vista. Parecía que faltaban.
+     *
+     * Se mueve el `<main>` y no la ventana: el que tiene `overflow-y:auto` es
+     * él. `window.scrollTo` acá no hace absolutamente nada.
+     */
+    document.querySelector('main')?.scrollTo({ top: 0 });
   };
 
 
@@ -1148,6 +1163,7 @@ export const App = () => {
   const rutaActiva = PADRE[ruta] ?? ruta;
   const Pantalla = {
     hoy: PantallaHoy, vender: PantallaVender, deudas: PantallaDeudas, cosas: PantallaCosas,
+    actividad: PantallaActividad,
     productos: PantallaProductos, clientes: PantallaClientes,
     ingreso: PantallaIngreso, proveedores: PantallaProveedores, numeros: PantallaNumeros,
   }[ruta];

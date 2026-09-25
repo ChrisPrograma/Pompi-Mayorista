@@ -113,7 +113,7 @@ describe('la plata que sale de una cantidad es exacta', () => {
     let { e, c, cliente, producto } = armar();
     e = aplicar(e, vender(e, {
       clienteId: cliente, items: [{ productoId: producto, cantidad: 6 }],
-      forma: 'efectivo', cobradoCent: pesos(39_000),
+      formaPago: 'efectivo', cobradoCent: pesos(39_000),
     }, c));
 
     const venta = e.ventas[0]!;
@@ -126,7 +126,7 @@ describe('la plata que sale de una cantidad es exacta', () => {
     let { e, c, cliente, producto } = armar();
     e = aplicar(e, vender(e, {
       clienteId: cliente, items: [{ productoId: producto, cantidad: 55 }],
-      forma: 'efectivo', cobradoCent: pesos(357_500),
+      formaPago: 'efectivo', cobradoCent: pesos(357_500),
     }, c));
 
     expect(e.ventas[0]!.totalCent).toBe(pesos(357_500));
@@ -139,7 +139,7 @@ describe('la plata que sale de una cantidad es exacta', () => {
     let { e, c, cliente, producto } = armar();
     e = aplicar(e, vender(e, {
       clienteId: cliente, items: [{ productoId: producto, cantidad: 6 }],
-      forma: 'efectivo', cobradoCent: pesos(39_000),
+      formaPago: 'efectivo', cobradoCent: pesos(39_000),
     }, c));
 
     const movimientos = e.movimientos.filter((m) => m.productoId === producto);
@@ -156,7 +156,7 @@ describe('la plata que sale de una cantidad es exacta', () => {
     let { e, c, cliente, producto } = armar();
     e = aplicar(e, vender(e, {
       clienteId: cliente, items: [{ productoId: producto, cantidad: 6 }],
-      forma: 'efectivo', cobradoCent: pesos(39_000),
+      formaPago: 'efectivo', cobradoCent: pesos(39_000),
     }, c));
 
     expect(e.ventas[0]!.items[0]!.cantidad).toBe(6);
@@ -167,7 +167,7 @@ describe('la plata que sale de una cantidad es exacta', () => {
     let { e, c, cliente, producto } = armar();
     e = aplicar(e, vender(e, {
       clienteId: cliente, items: [{ productoId: producto, cantidad: 6 }],
-      forma: 'efectivo', cobradoCent: pesos(39_000),
+      formaPago: 'efectivo', cobradoCent: pesos(39_000),
     }, c));
 
     const v = vistaHoy(e, HOY);
@@ -191,7 +191,7 @@ describe('la plata que sale de una cantidad es exacta', () => {
         { productoId: pretal, cantidad: 6 },
         { productoId: pelota, cantidad: 55 },
       ],
-      forma: 'efectivo', cobradoCent: total,
+      formaPago: 'efectivo', cobradoCent: total,
     }, c));
 
     expect(e.ventas[0]!.totalCent).toBe(pesos(138_000));

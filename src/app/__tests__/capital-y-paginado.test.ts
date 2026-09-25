@@ -20,17 +20,31 @@ import { idsSecuenciales } from '../semilla.ts';
 const HOY = '2026-09-22T14:00:00.000Z';
 const ctx = (p = 'k'): Ctx => ({ nuevoId: idsSecuenciales(p), ahora: () => HOY });
 
-/** Carga un producto y, si se le dice, hace entrar unidades con su costo. */
+/**
+ * Carga un producto y, si se le dice, hace entrar unidades con su costo.
+ *
+ * Sin `precio` arma el producto a mano, como fila del catálogo, y NO por
+ * `altaProducto`: el alta exige un precio mayor que cero y tiene razón. Un
+ * producto sin precio existe igual —bajado del servidor, o cargado por una
+ * versión vieja— y es el estado que estos tests necesitan reproducir.
+ */
 const conProducto = (
   e: EstadoApp,
   c: Ctx,
   datos: { nombre: string; precio?: number; cantidad?: number; costo?: number },
 ): EstadoApp => {
-  const r = altaProducto(e, {
-    nombre: datos.nombre,
-    ...(datos.precio !== undefined ? { precioCent: pesos(datos.precio) } : {}),
-  }, c);
-  let x = aplicar(e, r);
+  let x: EstadoApp;
+  if (datos.precio === undefined) {
+    x = {
+      ...e,
+      productos: [
+        ...e.productos,
+        { id: c.nuevoId(), negocioId: e.negocioId, nombre: datos.nombre, unidad: 'unidad', activo: true },
+      ],
+    };
+  } else {
+    x = aplicar(e, altaProducto(e, { nombre: datos.nombre, precioCent: pesos(datos.precio) }, c));
+  }
   const id = x.productos[x.productos.length - 1]!.id;
   if (datos.cantidad) {
     x = aplicar(x, entrarMercaderia(x, {
@@ -86,7 +100,7 @@ describe('el capital parado en mercadería', () => {
     // Vende 6 de las 2 que tiene: queda en −4.
     e = aplicar(e, vender(e, {
       clienteId: 'c1', items: [{ productoId: correa, cantidad: 6 }],
-      forma: 'efectivo', cobradoCent: pesos(18_000),
+      formaPago: 'efectivo', cobradoCent: pesos(18_000),
     }, c));
 
     const v = valorDelStock(e);
@@ -254,7 +268,7 @@ describe('corregir el precio de costo', () => {
     let { e, c, producto } = armar();
     e = aplicar(e, vender(e, {
       clienteId: 'c1', items: [{ productoId: producto, cantidad: 2 }],
-      forma: 'efectivo', cobradoCent: pesos(13_000),
+      formaPago: 'efectivo', cobradoCent: pesos(13_000),
     }, c));
     const antes = JSON.stringify(e.ventas[0]);
 

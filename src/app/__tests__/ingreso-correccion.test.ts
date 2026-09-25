@@ -164,7 +164,7 @@ describe('corregir un ingreso', () => {
     }, c));
     e = aplicar(e, vender(e, {
       clienteId: 'c1', items: [{ productoId: pretal, cantidad: 2 }],
-      forma: 'efectivo', cobradoCent: pesos(13_000),
+      formaPago: 'efectivo', cobradoCent: pesos(13_000),
     }, c));
     const ventaAntes = JSON.stringify(e.ventas[0]);
 
@@ -258,7 +258,18 @@ describe('el buscador de la pantalla de venta', () => {
     // aparecer en la búsqueda de esa pantalla.
     const c = ctx('z');
     let { e } = armar();
-    e = aplicar(e, altaProducto(e, { nombre: 'Correa sin precio' }, c));
+    /*
+     * A mano y no por `altaProducto`: el alta exige precio mayor que cero, y
+     * está bien que lo exija. Un producto sin precio llega de otro lado —del
+     * servidor, o de una carga vieja— y es justamente el que hay que probar.
+     */
+    e = {
+      ...e,
+      productos: [
+        ...e.productos,
+        { id: c.nuevoId(), negocioId: e.negocioId, nombre: 'Correa sin precio', unidad: 'unidad', activo: true },
+      ],
+    };
 
     expect(vistaProductos(e)).toHaveLength(3);
     expect(buscarProductos(vistaParaVender(e), 'correa')).toHaveLength(0);

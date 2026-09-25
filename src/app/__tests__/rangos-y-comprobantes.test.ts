@@ -107,7 +107,8 @@ const base = (): EstadoApp => ({
   proveedores: [{ id: 'prov1', negocioId: 'n1', nombre: 'Distribuidora Once', activo: true }],
   clientes: [{ id: 'c1', negocioId: 'n1', nombre: 'Veterinaria del Norte', activo: true }],
   productos: [{
-    id: 'p1', negocioId: 'n1', codigo: '1179', nombre: 'Pretal Plateado', activo: true,
+    id: 'p1', negocioId: 'n1', codigo: '1179', nombre: 'Pretal Plateado',
+    unidad: 'unidad', activo: true,
   }],
 });
 

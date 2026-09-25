@@ -110,6 +110,20 @@ export const fechaLarga = (iso: string): string =>
     month: 'long',
   });
 
+/**
+ * "22 de septiembre" — el encabezado de cada día en el historial de actividad.
+ *
+ * Sin el día de la semana, que en una lista de veinte movimientos es ruido
+ * repetido, y sin el año: el que hace falta es el del año en curso. Para lo
+ * viejo de verdad está `fechaLarga`.
+ */
+export const diaYMes = (iso: string): string =>
+  new Date(iso).toLocaleDateString('es-AR', {
+    timeZone: ZONA,
+    day: 'numeric',
+    month: 'long',
+  });
+
 /** "20/09/2026, 21:30" — para el comprobante. */
 export const fechaYHora = (iso: string): string => {
   const { anio, mes, dia } = leer(iso);

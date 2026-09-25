@@ -47,7 +47,7 @@ import type { Ruta } from './pantallas.tsx';
  */
 export const ANCLAS = [
   'resumen', 'misiones', 'alerta', 'vender-ya', 'me-llego',
-  'ventas-hoy', 'ingresos-hoy', 'anulado-mes',
+  'ultimas-actividades', 'filtros-actividad',
   'lista-clientes', 'cliente-nuevo', 'lista-productos', 'buscador-venta',
   'lista-deudas', 'lista-proveedores', 'hub',
   'producto-nuevo', 'lista-productos-todos', 'buscador',
@@ -116,9 +116,9 @@ export const RECORRIDO: PasoRecorrido[] = [
 
   // --- el comprobante -----------------------------------------------------
   {
-    ruta: 'hoy', destaca: 'ventas-hoy',
-    titulo: 'El comprobante, cuando te lo pidan',
-    texto: 'Tocá cualquier venta y se abre con todo el detalle y el botón para mandarle el comprobante por WhatsApp. Sirve el mismo día y dos semanas después.',
+    ruta: 'hoy', destaca: 'ultimas-actividades',
+    titulo: 'Lo último que hiciste, todo junto',
+    texto: 'Ventas, cobros, entradas de mercadería y anulaciones, en el orden en que pasaron. Tocá cualquiera y se abre con el detalle y el botón para mandar el comprobante por WhatsApp.',
   },
 
   // --- cobrar -------------------------------------------------------------
@@ -135,16 +135,16 @@ export const RECORRIDO: PasoRecorrido[] = [
     texto: 'Elegís el proveedor, marcás cuántas unidades entraron y con qué costo. El stock sube solo, y si le pagás después queda anotado lo que vos le debés.',
   },
   {
-    ruta: 'hoy', destaca: 'ingresos-hoy',
-    titulo: 'Lo que entró hoy, para revisarlo',
-    texto: 'Un cero de más al cargar una entrada es el error más fácil de cometer. Acá lo ves el mismo día y lo podés abrir para controlarlo.',
+    ruta: 'actividad', destaca: 'filtros-actividad',
+    titulo: 'Todo el historial, cuando necesitás buscar',
+    texto: 'Entrás con "Consultar todas". Buscás por comercio o proveedor, y con las chapitas de arriba mirás solo las ventas, solo los cobros, solo lo que entró o solo lo anulado.',
   },
 
   // --- corregir -----------------------------------------------------------
   {
-    ruta: 'hoy', destaca: 'anulado-mes',
+    ruta: 'actividad', destaca: 'filtros-actividad',
     titulo: 'Si algo lo anotaste mal, se anula',
-    texto: 'Desde el detalle de una venta o de una entrada. Vuelve el stock, la deuda y la plata a como estaban. No se borra nada: queda acá a la vista hasta que termine el mes.',
+    texto: 'Desde el detalle de una venta o de una entrada. Vuelve el stock, la deuda y la plata a como estaban. No se borra nada: la operación queda tachada en su día y la anulación aparece en el día que la hiciste.',
   },
 
   // --- lo tuyo ------------------------------------------------------------

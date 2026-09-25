@@ -317,7 +317,13 @@ export const altaProducto = (
 ): Resultado => {
   const nombre = args.nombre.trim();
   if (!nombre) throw new Error('El producto necesita un nombre');
-  if (args.precioCent <= 0) throw new Error('El producto necesita un precio de venta');
+  /*
+   * `!(x > 0)` y no `x <= 0`, que es lo que decía antes y dejaba pasar dos
+   * casos: `undefined <= 0` y `NaN <= 0` son los dos `false`, así que un alta
+   * sin precio creaba el producto igual, con la lista de precios vacía. Después
+   * ese producto no aparecía para vender y no había forma de saber por qué.
+   */
+  if (!(args.precioCent > 0)) throw new Error('El producto necesita un precio de venta');
 
   const codigo = args.codigo?.trim();
   if (codigo) {

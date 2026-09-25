@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { aCentavos, pesos, type Cent } from '../domain/money.ts';
-import { diaLocal, fechaCorta, fechaLarga, nombreDelRango, type Rango } from '../domain/fechas.ts';
+import { diaLocal, diaYMes, fechaLarga } from '../domain/fechas.ts';
 import type { Uuid } from '../domain/types.ts';
 import type { EstadoApp } from '../app/estado.ts';
 import {
@@ -27,7 +27,12 @@ import {
 import {
   Alerta, Cantidad, Codigo, Icono, Paginado, claseCategoria, plata, plataCorta,
 } from './componentes.tsx';
-import { POR_PAGINA, paginaDe } from './paginado.ts';
+import { paginaDe } from './paginado.ts';
+import {
+  CHAPA, EN_EL_INICIO, FILTROS, ICONO, POR_PAGINA_ACTIVIDAD, SIGNO,
+  actividades, agruparPorDia, buscarActividades, filtrarActividades, horaDe, momentoDe,
+  type Actividad, type FiltroActividad,
+} from './actividad.ts';
 import { borrarBorrador, guardarBorrador, leerBorrador } from './borrador.ts';
 import { bajarTexto, compartirTexto } from './compartir.ts';
 import { conBom, listaDePreciosTexto, nombreDeArchivo, planillaCsv } from './exportar.ts';
@@ -39,9 +44,15 @@ import { NEGOCIO } from './marca.ts';
  */
 import { tour } from './recorrido.ts';
 
-export type Ruta =
-  | 'hoy' | 'vender' | 'deudas' | 'cosas'
-  | 'productos' | 'clientes' | 'ingreso' | 'proveedores' | 'numeros';
+/*
+ * La lista vive en `rutas.ts` y el tipo sale de ella. Antes el tipo era la única
+ * forma que tenía la app de saber qué pantallas hay, y un tipo no se puede
+ * recorrer: el test que controla el recorrido guiado terminaba con la lista
+ * copiada adentro, y una copia se despega. Se reexporta desde acá para no tocar
+ * los veinte archivos que ya la importan de este.
+ */
+export { RUTAS, type Ruta } from './rutas.ts';
+import type { Ruta } from './rutas.ts';
 
 export interface Acciones {
   ir: (r: Ruta) => void;
@@ -213,49 +224,81 @@ function Barra<T extends string>({
 }
 
 /**
- * Semana · Quincena · Mes.
+ * Una fila del feed de actividad.
  *
- * Tres botones y no un desplegable: un `select` en un celular abre una rueda del
- * sistema operativo, que para elegir entre tres cosas es un paso de más. Y son
- * estos tres porque son los cortes que usa el negocio — la semana en que sale a
- * la calle, la quincena en que le paga a los proveedores, el mes que cierra.
+ * La misma en el inicio y en el historial completo: si fueran dos, se
+ * despegarían al primer cambio y lo que él aprendió a leer en una pantalla no le
+ * serviría en la otra.
+ *
+ * Tres cosas la definen de un vistazo, en este orden de importancia: el ícono
+ * redondo de la izquierda dice QUÉ pasó, el importe de la derecha dice CUÁNTO y
+ * con qué signo, y la chapita dice el tipo con todas las letras — porque un
+ * ícono solo se aprende con el uso y esto lo tiene que entender el primer día.
  */
-const SelectorRango = ({ valor, alCambiar }: { valor: Rango; alCambiar: (r: Rango) => void }) => (
-  <div className="orden" role="group" aria-label="Qué período mirar">
-    <span className="orden-et">Mostrar</span>
-    <div className="chips">
-      {([['semana', 'Semana'], ['quincena', 'Quincena'], ['mes', 'Mes']] as const).map(([id, texto]) => (
-        <button key={id} type="button" className={`chip ${id === valor ? 'on' : ''}`}
-          aria-pressed={id === valor} onClick={() => alCambiar(id)}>
-          {texto}
-        </button>
-      ))}
-    </div>
-  </div>
-);
+const FilaDeActividad = ({ a, cuando, alTocar }: {
+  a: Actividad;
+  /** Ya formateado: la hora sola en el historial, el día adelante en el inicio. */
+  cuando: string;
+  alTocar: () => void;
+}) => {
+  const chapa = CHAPA[a.tipo];
+  return (
+    <button className={`row act act-${a.tipo} ${a.anulada ? 'anulada' : ''}`}
+      onClick={alTocar}>
+      <span className={`thumb act-ico act-ico-${a.tipo}`}>
+        <Icono id={ICONO[a.tipo]} />
+      </span>
+      <span className="row-main">
+        <b>{a.conQuien}</b>
+        {/*
+          * El tipo encabeza el renglón chico, pintado, y no va en una chapita
+          * adentro del nombre: en un teléfono angosto la chapita se llevaba un
+          * renglón entero y el nombre del comercio arrancaba abajo.
+          */}
+        <span>
+          {/* El espacio duro pega el "·" a la palabra del tipo: sin él, al
+              cortarse el renglón el separador quedaba solo al principio de la
+              línea siguiente. */}
+          <em className={`act-tipo ${chapa.clase}`}>{chapa.texto}</em>
+          {'\u00A0· '}{cuando}{' · '}{a.detalle}
+        </span>
+      </span>
+      <span className="row-end">
+        {/*
+          * El signo va pegado al número y con la clase que lo pinta. Sin él, un
+          * ingreso de mercadería y una venta del mismo importe se ven idénticos,
+          * y son lo contrario: uno es plata que entra y el otro plata que sale.
+          */}
+        <b className={a.direccion ? `act-monto ${a.direccion}` : 'act-monto'}>
+          {a.direccion ? SIGNO[a.direccion] : ''}{plata(a.montoCent)}
+        </b>
+        <span>{a.estado}</span>
+      </span>
+      <Icono id="i-arrow" clase="ico-s ico-arrow" />
+    </button>
+  );
+};
+
+/** Adónde lleva tocar una fila. */
+const abrir = (a: Actividad, acc: Acciones) => () => {
+  if (a.destino.que === 'venta') acc.verVenta(a.destino.id);
+  else if (a.destino.que === 'ingreso') acc.verIngreso(a.destino.id);
+  else acc.verCliente(a.destino.id);
+};
 
 export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
   /*
-   * El rango de las dos secciones de abajo: lo que entró y lo que se anuló.
+   * Los números de arriba —cobré hoy, me deben, la ruta— siguen saliendo de
+   * `vistaHoy`. Lo que cambió es lo de abajo: donde había tres bloques con su
+   * rango y su paginado cada uno, ahora hay una sola tira de movimientos.
    *
-   * Arranca en el mes porque es como él cierra los números. Es estado de la
-   * pantalla y nada más: cambiarlo recalcula la vista en el momento, sin pedirle
-   * nada al servidor ni recargar. Los números de arriba —cobré hoy, me deben— no
-   * dependen del rango: son del día y de la calle, siempre.
+   * El rango se fue con los bloques. Para el inicio no hacía falta: acá se ven
+   * las tres últimas cosas que pasaron, sean de hoy o de la semana pasada, y el
+   * que quiera mirar un período entra a "Actividad", que tiene el buscador y los
+   * filtros.
    */
-  const [rango, setRango] = useState<Rango>('mes');
-  /*
-   * Una página por lista. Cambiar el rango las vuelve todas a la primera: si
-   * estaba en la página 3 de "mes" y pasa a "semana", quedarse en la 3 le
-   * mostraría una lista vacía y parecería que no hay nada.
-   */
-  const [pagVentas, setPagVentas] = useState(0);
-  const [pagIngresos, setPagIngresos] = useState(0);
-  const [pagAnuladas, setPagAnuladas] = useState(0);
-  const cambiarRango = (r: Rango) => {
-    setRango(r); setPagVentas(0); setPagIngresos(0); setPagAnuladas(0);
-  };
-  const v = useMemo(() => vistaHoy(estado, hoy, rango), [estado, hoy, rango]);
+  const v = useMemo(() => vistaHoy(estado, hoy), [estado, hoy]);
+  const ultimas = useMemo(() => actividades(estado).slice(0, EN_EL_INICIO), [estado]);
   const pend = sugerenciasPendientes(estado);
   const hechas = Number(v.misiones.venta) + Number(v.misiones.cobro);
 
@@ -404,149 +447,144 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
         </>
       )}
 
-      {v.ventasDeHoy.length > 0 && (
+      {/*
+        * Últimas actividades.
+        *
+        * Reemplaza a los tres bloques que había —lo vendido, lo que entró, lo
+        * anulado—, cada uno con su rango y su paginado. Tres listas separadas
+        * obligaban a armar el orden de los hechos en la cabeza: la venta de las
+        * 14, el ingreso de las 15 y la anulación de las 16 estaban en tres
+        * lugares distintos de la pantalla.
+        *
+        * Tres filas y no más. El inicio es para saber cómo viene el día de un
+        * vistazo, no para revisar: revisar es entrar a "Actividad".
+        */}
+      {ultimas.length > 0 && (
         <>
           <div className="section-h">
-            <h2>Lo que vendiste hoy</h2>
-            <span className="hint">{plata(v.vendidoHoyCent)}</span>
+            <h2>Últimas actividades</h2>
+            <button className="ver-todo" onClick={() => acc.ir('actividad')}>
+              Consultar todas <Icono id="i-arrow" clase="ico-s" />
+            </button>
           </div>
-          <div className="stack" {...tour('ventas-hoy')}>
-            {/*
-              * Cada venta es un botón: tocándola se abre el detalle con los
-              * productos y el botón para volver a mandar el comprobante. Es el
-              * pedido más chico de todos y el que más veces se va a usar —
-              * "mandámelo de nuevo" es lo que más le piden.
-              */}
-            {paginaDe(v.ventasDeHoy, pagVentas, POR_PAGINA).map((x) => (
-              <button className="row" key={x.id} onClick={() => acc.verVenta(x.id)}>
-                <span className="thumb">
-                  <span style={{ fontFamily: 'Archivo', fontWeight: 700, fontSize: 12 }}>{x.hora}</span>
-                </span>
-                <span className="row-main"><b>{x.cliente}</b><span>{x.items} productos</span></span>
-                <span className="row-end">
-                  <b>{plata(x.totalCent)}</b>
-                  <span>
-                    {x.estado === 'cobrado' ? 'cobrado'
-                      : x.estado === 'parcial' ? `pagó ${plataCorta(x.cobradoCent)}`
-                      : 'quedó debiendo'}
-                  </span>
-                </span>
-                <Icono id="i-arrow" clase="ico-s ico-arrow" />
-              </button>
+          <div className="stack" {...tour('ultimas-actividades')}>
+            {ultimas.map((a) => (
+              <FilaDeActividad key={a.clave} a={a} cuando={momentoDe(a, hoy)}
+                alTocar={abrir(a, acc)} />
             ))}
           </div>
-          <Paginado pagina={pagVentas} porPagina={POR_PAGINA}
-            total={v.ventasDeHoy.length} alCambiar={setPagVentas} />
         </>
       )}
+    </div>
+  );
+};
 
-      {/*
-        * "Lo que ingresó", al lado de lo que vendió.
-        *
-        * Va DEBAJO de las ventas y no arriba: lo que entra es plata que sale, y
-        * la pantalla de inicio tiene que abrir con lo que ganó. Pero tiene que
-        * estar, porque cargar mal un ingreso es el error más fácil de cometer
-        * —un cero de más en la cantidad— y hasta ahora no había dónde verlo el
-        * mismo día.
-        */}
-      {(v.ingresosDelRango.length > 0 || v.anuladasDelRango.length > 0) && (
-        <SelectorRango valor={rango} alCambiar={cambiarRango} />
-      )}
+// ---------------------------------------------------------------------------
+// Actividad
+// ---------------------------------------------------------------------------
+/**
+ * El historial completo: todo lo que pasó, agrupado por día.
+ *
+ * Es la pantalla a la que lleva "Consultar todas". Arriba el buscador y las
+ * chapitas de tipo, abajo la tira agrupada por día y paginada de a veinte.
+ *
+ * Veinte y no diez como en el resto de la app: acá se viene a buscar algo, y una
+ * página corta obliga a pasar de a poco. Diez está bien para una lista que
+ * acompaña; ésta es la lista principal de la pantalla.
+ */
+export const PantallaActividad = ({ estado, hoy, acc }: Props) => {
+  const [filtro, setFiltro] = useState<FiltroActividad>('todos');
+  const [q, setQ] = useState('');
+  const [pagina, setPagina] = useState(0);
 
-      {v.ingresosDelRango.length > 0 && (
-        <>
-          <div className="section-h">
-            <h2>Lo que ingresó {nombreDelRango(rango, hoy)}</h2>
-            <span className="hint">{plata(v.ingresadoDelRangoCent)}</span>
-          </div>
-          <div className="stack" {...tour('ingresos-hoy')}>
-            {paginaDe(v.ingresosDelRango, pagIngresos, POR_PAGINA).map((x) => (
-              <button className={`row ${x.anulada ? 'anulada' : ''}`} key={x.id}
-                onClick={() => acc.verIngreso(x.id)}>
-                {/*
-                  * Antes acá iba solo la hora, porque la lista era del día. Con
-                  * el rango en semana o mes, una hora suelta no ubica nada: va
-                  * el día arriba y la hora abajo.
-                  */}
-                <span className="thumb">
-                  <span style={{ fontFamily: 'Archivo', fontWeight: 700, fontSize: 11.5, lineHeight: 1.15, textAlign: 'center' }}>
-                    {fechaCorta(x.fecha)}<br />{x.hora}
-                  </span>
-                </span>
-                <span className="row-main">
-                  <b>{x.proveedor}</b>
-                  <span>
-                    {x.unidades} u. en {x.productos === 1 ? '1 producto' : `${x.productos} productos`}
-                  </span>
-                </span>
-                <span className="row-end">
-                  <b>{plata(x.totalCent)}</b>
-                  <span>
-                    {x.anulada ? 'anulado'
-                      : x.condicionPago === 'cuenta' ? 'se lo debés' : 'pagado'}
-                  </span>
-                </span>
-                <Icono id="i-arrow" clase="ico-s ico-arrow" />
+  const todas = useMemo(() => actividades(estado), [estado]);
+  const visibles = useMemo(
+    () => buscarActividades(filtrarActividades(todas, filtro), q),
+    [todas, filtro, q],
+  );
+
+  /*
+   * Se agrupa DESPUÉS de paginar. Al revés, una página podría cortar un día por
+   * la mitad y el encabezado quedaría arriba sin nada abajo.
+   */
+  const grupos = useMemo(
+    () => agruparPorDia(paginaDe(visibles, pagina, POR_PAGINA_ACTIVIDAD), hoy, diaYMes),
+    [visibles, pagina, hoy],
+  );
+
+  /* Cambiar de filtro o de búsqueda vuelve a la primera página: quedarse en la
+     tercera mostraría un vacío que parece "no hay nada". */
+  const cambiar = (f: () => void) => { f(); setPagina(0); };
+
+  return (
+    <div className="view">
+      {/* Vuelve al inicio y no a "Mis cosas": acá se entra desde el inicio. */}
+      <button className="btn ghost" style={{ alignSelf: 'flex-start', padding: '9px 14px', fontSize: 14 }}
+        onClick={() => acc.ir('hoy')}>
+        <Icono id="i-back" clase="ico-s" /> Inicio
+      </button>
+
+      <div className="section-h">
+        <h2>Actividad</h2>
+        <span className="hint">
+          {visibles.length === 1 ? '1 movimiento' : `${visibles.length} movimientos`}
+        </span>
+      </div>
+
+      <div className="barra" {...tour('filtros-actividad')}>
+        <div className="buscador">
+          <Icono id="i-search" clase="ico-s" />
+          {/* Las mismas clases que los otros buscadores de la app: `texto` y
+              `buscador-x`. Sin ellas el campo se dibuja con el borde que le pone
+              el navegador, adentro del recuadro — dos marcos, uno adentro del
+              otro. */}
+          <input className="texto" type="search" inputMode="search"
+            placeholder="Buscar comercio o proveedor"
+            aria-label="Buscar en la actividad"
+            value={q} onChange={(ev: ChangeEvent<HTMLInputElement>) =>
+              cambiar(() => setQ(ev.target.value))} />
+          {q && (
+            <button className="buscador-x" aria-label="Borrar la búsqueda"
+              onClick={() => cambiar(() => setQ(''))}>
+              <Icono id="i-close" clase="ico-s" />
+            </button>
+          )}
+        </div>
+        <div className="orden" role="group" aria-label="Qué movimientos mostrar">
+          <span className="orden-et">Mostrar</span>
+          <div className="chips">
+            {FILTROS.map((f) => (
+              <button key={f.id} type="button" className={`chip ${f.id === filtro ? 'on' : ''}`}
+                aria-pressed={f.id === filtro}
+                onClick={() => cambiar(() => setFiltro(f.id))}>
+                {f.texto}
               </button>
             ))}
           </div>
-          <Paginado pagina={pagIngresos} porPagina={POR_PAGINA}
-            total={v.ingresosDelRango.length} alCambiar={setPagIngresos} />
-        </>
-      )}
+        </div>
+      </div>
 
-      {/*
-        * Lo que anuló este mes.
-        *
-        * Bloque aparte y último de todo, a propósito. Una anulación no es
-        * actividad del día —puede ser la corrección de algo de hace dos
-        * semanas—, así que mezclarla arriba ensuciaría los números que él mira
-        * primero. Pero tampoco puede desaparecer: si se equivocó al anular,
-        * este es el único lugar donde lo va a ver sin ir a buscarlo.
-        *
-        * Se limpia solo el 1° del mes siguiente. No se borra nada: la venta
-        * anulada sigue entera en su ficha y en la base.
-        */}
-      {v.anuladasDelRango.length > 0 && (
+      {visibles.length === 0 ? (
+        <Alerta tipo="ok" icono="i-clock"
+          titulo={q.trim() || filtro !== 'todos' ? 'No hay movimientos así' : 'Todavía no hay movimientos'}
+          texto={q.trim() || filtro !== 'todos'
+            ? 'Probá con otra palabra, o tocá "Todos" para ver todo lo que hiciste.'
+            : 'Acá va a aparecer todo lo que hagas: ventas, cobros, entradas de mercadería y anulaciones.'} />
+      ) : (
         <>
-          <div className="section-h">
-            <h2>Anulado {nombreDelRango(rango, hoy)}</h2>
-            <span className="hint">
-              {v.anuladasDelRango.length === 1 ? '1 comprobante' : `${v.anuladasDelRango.length} comprobantes`}
-            </span>
-          </div>
-          <div className="stack" {...tour('anulado-mes')}>
-            {paginaDe(v.anuladasDelRango, pagAnuladas, POR_PAGINA).map((x) => (
-              <button className="row anulada" key={x.id}
-                onClick={() => (x.tipo === 'venta' ? acc.verVenta(x.id) : acc.verIngreso(x.id))}>
-                <span className="thumb">
-                  <Icono id={x.tipo === 'venta' ? 'i-cart' : 'i-inbox'} />
-                </span>
-                <span className="row-main">
-                  <b>
-                    {/* El tipo, en una chapita: de un vistazo se distingue una
-                        venta a un comercio de una entrada de un proveedor. */}
-                    <span className={`pill ${x.tipo === 'venta' ? 'mute' : 'warn'}`}
-                      style={{ marginRight: 6 }}>
-                      {x.tipo === 'venta' ? 'Venta' : 'Ingreso'}
-                    </span>
-                    {x.conQuien}
-                  </b>
-                  <span>
-                    {x.tipo === 'venta' ? 'Vendido' : 'Ingresado'} el {fechaCorta(x.fecha)}
-                    {' · '}anulado el {fechaCorta(x.anuladaEn)}
-                  </span>
-                </span>
-                <span className="row-end">
-                  <b>{plata(x.totalCent)}</b>
-                  <span>anulado</span>
-                </span>
-                <Icono id="i-arrow" clase="ico-s ico-arrow" />
-              </button>
-            ))}
-          </div>
-          <Paginado pagina={pagAnuladas} porPagina={POR_PAGINA}
-            total={v.anuladasDelRango.length} alCambiar={setPagAnuladas} />
+          {grupos.map((g) => (
+            <div key={g.dia}>
+              <p className="dia-et">{g.etiqueta}</p>
+              <div className="stack">
+                {g.items.map((a) => (
+                  <FilaDeActividad key={a.clave} a={a} cuando={horaDe(a)}
+                    alTocar={abrir(a, acc)} />
+                ))}
+              </div>
+            </div>
+          ))}
+          <Paginado pagina={pagina} porPagina={POR_PAGINA_ACTIVIDAD}
+            total={visibles.length} alCambiar={setPagina} />
         </>
       )}
     </div>

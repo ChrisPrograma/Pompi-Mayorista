@@ -732,3 +732,91 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
   background:var(--surface);border-radius:6px;padding:0 6px;margin-right:6px;
   vertical-align:baseline;
 }
+
+/* ---------------------------------------------------------------------------
+ * Actividad
+ *
+ * La tira de movimientos: una fila por hecho, con el ícono a la izquierda, la
+ * chapita del tipo adentro del nombre y el importe firmado a la derecha.
+ *
+ * Reemplaza a los tres bloques separados que tenía el inicio. La diferencia de
+ * color entre tipos hace el trabajo que antes hacía el título de cada sección:
+ * mirando la columna de íconos ya se sabe qué fue cada cosa, sin leer.
+ * ------------------------------------------------------------------------ */
+
+/* "Consultar todas →", al lado del título. Es un enlace y no un botón grande:
+   compite con el título por el mismo renglón y tiene que perder. */
+.ver-todo{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:14.5px;font-weight:600;color:var(--brand);
+  padding:4px 2px;background:none;border:0;
+}
+.ver-todo:active{opacity:.6}
+.ver-todo .ico{color:currentColor}
+
+/* Cada tipo con su color. Son los mismos que ya usa el resto de la app para
+   decir lo mismo: verde lo que entra, ámbar lo que sale, rojo lo anulado. */
+.act-ico-venta{background:var(--ok-soft);color:var(--ok)}
+.act-ico-cobro{background:var(--brand-soft);color:var(--brand-ink)}
+.act-ico-ingreso{background:var(--warn-soft);color:var(--warn)}
+.act-ico-anulacion{background:var(--bad-soft);color:var(--bad)}
+
+/*
+ * El signo del importe, pintado.
+ *
+ * Es la diferencia entre "cobré $39.000" y "pagué $39.000", y en una tira
+ * mezclada es lo único que las separa a primera vista. El menos es U+2212, no
+ * un guión: alineado con los números, que es donde se lee.
+ */
+.act-monto.entra{color:var(--ok)}
+.act-monto.sale{color:var(--warn)}
+.row.act.anulada .act-monto{color:var(--ink-3)}
+
+/* Una anulación no mueve plata: el importe va apagado y tachado, como el de la
+   operación que deshizo. */
+.row.act-anulacion .act-monto{text-decoration:line-through;color:var(--ink-3)}
+.row.act-anulacion{border-style:dashed}
+
+/* El encabezado de cada día: "Hoy", "Ayer", "22 de septiembre". */
+.dia-et{
+  font-size:13.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:700;
+  margin:18px 0 8px;
+}
+.dia-et:first-child{margin-top:4px}
+
+@media (min-width:900px){
+  /*
+   * El grupo de un día es un bloque entero: el encabezado arriba y sus filas
+   * abajo. Metido en una columna, "Hoy" quedaría a un tercio de la pantalla con
+   * sus movimientos debajo y dos columnas vacías al lado.
+   */
+  .view > div:has(> .dia-et){grid-column:1/-1}
+  .view > div:has(> .dia-et) > .stack{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
+    gap:10px;
+  }
+}
+
+/* La palabra del tipo, al principio del renglón chico. Sin cursiva: `em` acá es
+   énfasis semántico, no tipografía inclinada. */
+.act-tipo{font-style:normal;font-weight:700}
+.act-tipo.ok{color:var(--ok)}
+.act-tipo.brand{color:var(--brand)}
+.act-tipo.warn{color:var(--warn)}
+.act-tipo.bad{color:var(--bad)}
+
+/*
+ * La columna de la derecha no se lleva media fila.
+ *
+ * Sin tope, "te lo debe" o "transferencia" empujaban el nombre del comercio a
+ * dos renglones en un teléfono de 390 px. El importe manda; la palabra de abajo
+ * acompaña y puede cortarse en dos líneas.
+ */
+.row.act .row-end{max-width:38%}
+.row.act .row-end span{font-size:12.5px;line-height:1.2}
+
+/* El título de la sección le deja lugar a "Consultar todas" en el mismo
+   renglón: el enlace es corto y encabezar con dos líneas es raro. */
+.section-h:has(.ver-todo) h2{flex:0 1 auto}
