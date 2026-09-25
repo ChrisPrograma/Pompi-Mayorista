@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { armarEstado, iso, unir, type FilasServidor } from '../descarga.ts';
 import { PARAMETROS_DEFAULT, type EstadoApp } from '../../app/estado.ts';
-import type { PrecioVenta, SugerenciaPrecio } from '../../domain/types.ts';
+import type { MovimientoStock, PrecioVenta, SugerenciaPrecio } from '../../domain/types.ts';
 
 const NEGOCIO = '11111111-1111-1111-1111-111111111111';
 const LISTA = '22222222-2222-2222-2222-222222222222';
@@ -202,5 +202,185 @@ describe('unir lo que bajó con lo que había', () => {
   it('sin nada local, queda tal cual lo que bajó', () => {
     const remoto = estadoVacio();
     expect(unir(null, remoto, new Set())).toBe(remoto);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Tests del bug del capital: el movimiento de stock que se contaba dos veces.
+ *
+ * EL CASO REAL: el celular de Pablo marcaba 1765 unidades, su computadora 1268 y
+ * el servidor 907. Los aparatos que solo bajan daban bien; los que cargan, nunca.
+ *
+ * La causa: el aparato arma el movimiento con su id y el servidor lo vuelve a
+ * armar con `gen_random_uuid()`. Dos ids, dos filas, y "bajar no borra" las
+ * conservaba las dos.
+ */
+const mov = (m: Partial<MovimientoStock> & { id: string }): MovimientoStock => ({
+  negocioId: NEGOCIO, productoId: 'prod', ubicacion: 'deposito',
+  cantidad: 10, tipo: 'compra', refTipo: 'compra', refId: 'compra-1',
+  fecha: '2026-09-20T10:00:00.000Z', ...m,
+});
+
+/** Cuántas unidades ve la app: el stock es la suma del libro mayor. */
+const unidades = (e: EstadoApp): number => e.movimientos.reduce((a, m) => a + m.cantidad, 0);
+
+describe('el movimiento de stock no se cuenta dos veces', () => {
+  it('el del servidor reemplaza al provisorio del aparato, aunque tengan otro id', () => {
+    /*
+     * El corazón del bug. Diez unidades entraron UNA vez; el aparato tiene su
+     * copia con id local y baja la del servidor con otro id. Tienen que quedar
+     * diez, no veinte.
+     */
+    const local = { ...estadoVacio(), movimientos: [mov({ id: 'local-1' })] };
+    const remoto = { ...estadoVacio(), movimientos: [mov({ id: 'servidor-1' })] };
+
+    const unido = unir(local, remoto, new Set());
+    expect(unido.movimientos).toHaveLength(1);
+    expect(unido.movimientos[0]!.id).toBe('servidor-1');
+    expect(unidades(unido)).toBe(10);
+  });
+
+  it('con varios renglones tampoco: una compra de tres productos son tres movimientos', () => {
+    const local = { ...estadoVacio(), movimientos: [
+      mov({ id: 'l1', productoId: 'p1', cantidad: 5 }),
+      mov({ id: 'l2', productoId: 'p2', cantidad: 3 }),
+      mov({ id: 'l3', productoId: 'p3', cantidad: 2 }),
+    ] };
+    const remoto = { ...estadoVacio(), movimientos: [
+      mov({ id: 's1', productoId: 'p1', cantidad: 5 }),
+      mov({ id: 's2', productoId: 'p2', cantidad: 3 }),
+      mov({ id: 's3', productoId: 'p3', cantidad: 2 }),
+    ] };
+
+    const unido = unir(local, remoto, new Set());
+    expect(unido.movimientos).toHaveLength(3);
+    expect(unidades(unido)).toBe(10);
+  });
+
+  it('bajar dos veces seguidas no vuelve a sumar', () => {
+    // La descarga corre en cada apertura. Si no fuera idempotente, el stock
+    // crecería un poco cada vez que abre la app.
+    const remoto = { ...estadoVacio(), movimientos: [mov({ id: 'servidor-1' })] };
+    let estado = unir({ ...estadoVacio(), movimientos: [mov({ id: 'local-1' })] }, remoto, new Set());
+    estado = unir(estado, remoto, new Set());
+    estado = unir(estado, remoto, new Set());
+
+    expect(estado.movimientos).toHaveLength(1);
+    expect(unidades(estado)).toBe(10);
+  });
+
+  it('limpia los fantasmas que ya quedaron de antes', () => {
+    /*
+     * Lo que hace que esto no necesite ni migración ni que nadie borre nada: un
+     * aparato que YA viene con las dos copias adentro queda limpio en la próxima
+     * descarga.
+     */
+    const contaminado = { ...estadoVacio(), movimientos: [
+      mov({ id: 'local-1' }), mov({ id: 'servidor-1' }),
+    ] };
+    expect(unidades(contaminado)).toBe(20);   // el número que veía Pablo
+
+    const unido = unir(contaminado, { ...estadoVacio(), movimientos: [mov({ id: 'servidor-1' })] }, new Set());
+    expect(unido.movimientos).toHaveLength(1);
+    expect(unidades(unido)).toBe(10);
+  });
+
+  it('la anulación y la entrada son dos grupos, no uno', () => {
+    /*
+     * Una compra anulada tiene DOS juegos de movimientos con el mismo `refId`:
+     * la entrada y el ajuste que la compensa. Agrupando solo por `refId`, el
+     * ajuste del servidor borraría la entrada y el stock quedaría al revés.
+     */
+    const local = { ...estadoVacio(), movimientos: [
+      mov({ id: 'l-entrada' }),
+      mov({ id: 'l-ajuste', cantidad: -10, tipo: 'ajuste' }),
+    ] };
+    const remoto = { ...estadoVacio(), movimientos: [
+      mov({ id: 's-entrada' }),
+      mov({ id: 's-ajuste', cantidad: -10, tipo: 'ajuste' }),
+    ] };
+
+    const unido = unir(local, remoto, new Set());
+    expect(unido.movimientos).toHaveLength(2);
+    expect(unidades(unido)).toBe(0);
+    expect(unido.movimientos.map((m) => m.id).sort()).toEqual(['s-ajuste', 's-entrada']);
+  });
+
+  it('si el servidor solo mandó la entrada, el ajuste local se conserva', () => {
+    // La anulación se hizo sin señal y todavía no subió. Borrarla sería devolver
+    // al stock mercadería que él ya sacó.
+    const local = { ...estadoVacio(), movimientos: [
+      mov({ id: 'l-entrada' }),
+      mov({ id: 'l-ajuste', cantidad: -10, tipo: 'ajuste' }),
+    ] };
+    const remoto = { ...estadoVacio(), movimientos: [mov({ id: 's-entrada' })] };
+
+    const unido = unir(local, remoto, new Set());
+    expect(unido.movimientos.map((m) => m.id).sort()).toEqual(['l-ajuste', 's-entrada']);
+    expect(unidades(unido)).toBe(0);
+  });
+
+  it('una compra que todavía no subió no se toca', () => {
+    // Está en la cola: lo del aparato es más nuevo que lo que el servidor sabe.
+    const local = { ...estadoVacio(), movimientos: [mov({ id: 'l1', refId: 'compra-nueva' })] };
+    const remoto = estadoVacio();
+
+    const unido = unir(local, remoto, new Set(['compra-nueva']));
+    expect(unido.movimientos).toHaveLength(1);
+    expect(unido.movimientos[0]!.id).toBe('l1');
+  });
+
+  it('con la compra en la cola, el servidor no pisa lo local', () => {
+    /*
+     * La cola reintenta: el servidor puede ya tener la compra mientras el
+     * aparato todavía la da por pendiente. En ese rato gana lo local, y la
+     * próxima descarga —con la cola ya vacía— deja la del servidor.
+     */
+    const local = { ...estadoVacio(), movimientos: [mov({ id: 'l1' })] };
+    const remoto = { ...estadoVacio(), movimientos: [mov({ id: 's1' })] };
+
+    const enCola = unir(local, remoto, new Set(['compra-1']));
+    expect(enCola.movimientos.map((m) => m.id)).toEqual(['l1']);
+    expect(unidades(enCola)).toBe(10);
+
+    const yaSubida = unir(enCola, remoto, new Set());
+    expect(yaSubida.movimientos.map((m) => m.id)).toEqual(['s1']);
+    expect(unidades(yaSubida)).toBe(10);
+  });
+
+  it('una venta que el servidor no conoce se conserva entera', () => {
+    // La regla vieja que NO hay que romper: bajar no borra.
+    const local = { ...estadoVacio(), movimientos: [
+      mov({ id: 'l-venta', cantidad: -4, tipo: 'venta', refTipo: 'venta', refId: 'venta-sin-subir' }),
+    ] };
+    const unido = unir(local, estadoVacio(), new Set());
+    expect(unido.movimientos).toHaveLength(1);
+    expect(unidades(unido)).toBe(-4);
+  });
+
+  it('un movimiento sin operación detrás se une por id, como antes', () => {
+    const local = { ...estadoVacio(), movimientos: [
+      mov({ id: 'suelto-local', refId: undefined, refTipo: undefined, tipo: 'ajuste' }),
+    ] };
+    const remoto = { ...estadoVacio(), movimientos: [
+      mov({ id: 'suelto-servidor', refId: undefined, refTipo: undefined, tipo: 'ajuste' }),
+    ] };
+
+    const unido = unir(local, remoto, new Set());
+    expect(unido.movimientos).toHaveLength(2);
+  });
+
+  it('las operaciones de OTRAS compras no se tocan', () => {
+    const local = { ...estadoVacio(), movimientos: [
+      mov({ id: 'l-a', refId: 'compra-a' }),
+      mov({ id: 'l-b', refId: 'compra-b', cantidad: 7 }),
+    ] };
+    const remoto = { ...estadoVacio(), movimientos: [mov({ id: 's-a', refId: 'compra-a' })] };
+
+    const unido = unir(local, remoto, new Set());
+    expect(unido.movimientos.map((m) => m.id).sort()).toEqual(['l-b', 's-a']);
+    expect(unidades(unido)).toBe(17);
   });
 });

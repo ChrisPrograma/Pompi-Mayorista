@@ -1,9 +1,11 @@
 {
-  "//": "Chequeo de tipos de TODO el proyecto, tests incluidos, en un entorno sin npm. Es el que tiene que dar limpio antes de subir: mira exactamente los mismos archivos que `tsc --noEmit` del build de Vercel. `tsconfig.verificacion.json` saltea los tests y por eso NO alcanza — un import sin usar en un test pasa por ahí y rompe el deploy.",
+  "//": "Chequeo de tipos de TODO el proyecto, tests incluidos. Es el que tiene que dar limpio antes de subir. `tsconfig.produccion.json` mira exactamente los archivos que compila Vercel; este mira esos MÁS los tests. La regla del proyecto: lo local es MÁS estricto que Vercel, nunca menos.",
+  "//exclude": "El `exclude` vacío NO es decorativo y no se borra. `extends` HEREDA el `exclude` del padre, y el padre saca los tests para que un test roto no tire abajo un deploy. Sin esta línea, este archivo hereda esa exclusión y termina chequeando lo mismo que producción: los tests quedan sin mirar y un `formaPago` mal escrito pasa hasta que alguien lo lee a mano. Pasó. Para probarlo: rompé a propósito un tipo en cualquier test y corré `npm run typecheck:completo` — tiene que fallar.",
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "types": [],
     "skipLibCheck": true
   },
+  "exclude": [],
   "include": ["src", "scripts/tipos-minimos"]
 }

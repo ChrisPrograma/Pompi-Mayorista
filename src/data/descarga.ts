@@ -287,6 +287,90 @@ const unirFilas = <T extends { id: Uuid }>(
 };
 
 /**
+ * Los movimientos de stock necesitan su propia regla, y es LA regla que faltaba.
+ *
+ * EL BUG QUE ESTO ARREGLA — el capital que no coincidía entre aparatos.
+ *
+ * Un movimiento de stock nace DOS VECES, con dos ids distintos. El aparato lo
+ * arma al registrar la operación, con su `ctx.nuevoId()`, para poder mostrar el
+ * stock al instante y sin señal. Y el servidor lo vuelve a armar cuando recibe
+ * la operación:
+ *
+ *     insert into movimientos_stock values (gen_random_uuid(), ...)
+ *
+ * El `p_items` que sube lleva producto, cantidad y costo — no lleva ids, así que
+ * el servidor no tiene con qué construirlos y los inventa. Después, al bajar,
+ * `unirFilas` une POR ID: dos ids distintos son dos filas distintas, y la regla
+ * "bajar no borra" las conserva las dos. **Cada movimiento quedaba contado dos
+ * veces en el aparato que lo creó.**
+ *
+ * El error era acumulativo por aparato y proporcional a cuánto se cargó en él:
+ * el celular de Pablo marcaba 1765 unidades, su computadora 1268 y el servidor
+ * 907. Un aparato que solo baja daba bien; uno que carga, nunca.
+ *
+ * Y era invisible del lado de la deuda: la CABECERA de la compra y de la venta
+ * sí comparte el id —viaja como `p_id`— así que "Me deben" daba idéntico en
+ * todos los aparatos mientras el capital daba distinto en cada uno. Esa
+ * combinación es la huella del bug.
+ *
+ * POR QUÉ SE ARREGLA ACÁ Y NO EN EL SERVIDOR
+ *
+ * La otra salida era una migración que hiciera que el servidor acepte los ids
+ * del aparato. Arregla los movimientos nuevos y **no arregla los que ya están
+ * duplicados adentro de los aparatos**: esos habría que ir a limpiarlos con un
+ * "vaciar y volver a bajar", que es destructivo y hay que pedírselo al usuario.
+ *
+ * Esta regla los limpia SOLA en la próxima descarga, sin tocar el servidor, sin
+ * migración y sin que nadie tenga que borrar nada.
+ *
+ * LA REGLA
+ *
+ * Un movimiento nunca se crea suelto: siempre sale de una operación —una compra,
+ * una venta, una anulación— y lleva su `refId`, que SÍ es el mismo de los dos
+ * lados. Entonces: **si el servidor manda movimientos para una operación, los
+ * del servidor son los únicos que valen para esa operación.** Los locales de esa
+ * misma operación eran la copia provisoria y se van.
+ *
+ * Se agrupa por `refId` + `tipo` y no solo por `refId` porque una compra anulada
+ * tiene dos grupos con el mismo `refId`: la entrada (`compra`) y su ajuste
+ * compensatorio (`ajuste`). Son dos hechos distintos y pueden llegar en momentos
+ * distintos.
+ *
+ * Lo que NO se toca, y es lo que hace que esto no pierda nada:
+ *
+ *  - Una operación que todavía está en la cola de salida: lo local es más nuevo
+ *    por definición, el servidor todavía no la vio.
+ *  - Una operación que el servidor no conoce: puede ser una venta esperando
+ *    señal. Se conserva, igual que antes.
+ *  - Un movimiento sin `refId`: no depende de ninguna operación, se une por id
+ *    como el resto.
+ */
+const grupoDe = (m: MovimientoStock): string => `${m.refId}|${m.tipo}`;
+
+const unirMovimientos = (
+  locales: MovimientoStock[],
+  remotas: MovimientoStock[],
+  enCola: Set<string>,
+): MovimientoStock[] => {
+  /** Para qué operaciones el servidor ya mandó sus movimientos. */
+  const queTraeElServidor = new Set(remotas.map(grupoDe));
+
+  const conservados = locales.filter((m) => {
+    if (!m.refId) return true;                       // no depende de una operación
+    if (enCola.has(m.refId)) return true;            // todavía no subió: manda lo local
+    return !queTraeElServidor.has(grupoDe(m));       // el servidor no lo conoce
+  });
+
+  const porId = new Map(conservados.map((m) => [m.id, m]));
+  // La misma protección de siempre: no se pisa lo que está esperando subir.
+  for (const r of remotas) {
+    if (r.refId && enCola.has(r.refId)) continue;
+    porId.set(r.id, r);
+  }
+  return [...porId.values()];
+};
+
+/**
  * Los precios necesitan una regla de más.
  *
  * Cambiar un precio son dos cosas: abrir la fila nueva y CERRAR la anterior. La
@@ -369,7 +453,7 @@ export const unir = (
     clientes: unirFilas(local.clientes, remoto.clientes, enCola),
     proveedores: unirFilas(local.proveedores, remoto.proveedores, enCola),
     precios: unirPrecios(local.precios, remoto.precios, enCola),
-    movimientos: unirFilas(local.movimientos, remoto.movimientos, enCola),
+    movimientos: unirMovimientos(local.movimientos, remoto.movimientos, enCola),
     compras: unirFilas(local.compras, remoto.compras, enCola),
     ventas: unirFilas(local.ventas, remoto.ventas, enCola),
     pagos: unirFilas(local.pagos, remoto.pagos, enCola),

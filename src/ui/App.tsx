@@ -139,6 +139,15 @@ export const App = () => {
   const [sinSubir, setSinSubir] = useState(0);
   /** Por qué no se pudo traer nada del servidor, cuando el dispositivo tampoco tiene. */
   const [problemaDatos, setProblemaDatos] = useState<string | null>(null);
+  /*
+   * La última descarga falló y hay datos en el aparato.
+   *
+   * Es distinto de `problemaDatos`, que tapa la pantalla porque no hay NADA que
+   * mostrar. Acá sí hay con qué trabajar, así que la app sigue andando y el
+   * aviso es una línea al pie. Antes este caso no decía nada: se seguía viendo
+   * la copia vieja del aparato como si fuera la verdad, y así estuvo días.
+   */
+  const [datosViejos, setDatosViejos] = useState(false);
   /** Se incrementa para volver a intentar la descarga sin recargar la página. */
   const [intento, setIntento] = useState(0);
   /**
@@ -226,12 +235,14 @@ export const App = () => {
             return unido;
           });
           setProblemaDatos(null);
+          setDatosViejos(false);
           return;
         }
         // Con datos en el dispositivo se sigue trabajando igual y se reintenta
         // en la próxima apertura. Sin datos no hay nada que mostrar, y decirlo es
         // mejor que abrir una app vacía que parece decir "no tenés nada cargado".
         if (!local) setProblemaDatos(r.detalle);
+        else setDatosViejos(true);
         return;
       }
 
@@ -249,6 +260,43 @@ export const App = () => {
     })();
     return () => { vivo = false; };
   }, [sesion, intento]);
+
+  // ---- volver a bajar al retomar la app ------------------------------------
+  //
+  // La descarga de arriba corre al MONTAR. En una PWA instalada eso puede no
+  // volver a pasar en días: el sistema no cierra la app, la suspende, y al
+  // volver se retoma la misma página sin montar nada de nuevo.
+  //
+  // Ese fue medio problema real: Pablo veía "Cobré hoy $0" mientras el servidor
+  // tenía sus siete ventas de esa mañana. No es que no bajaran — es que no se
+  // volvía a bajar nunca.
+  //
+  // Se re-baja cuando la app vuelve a estar a la vista, con un descanso en el
+  // medio: mirar la pantalla, contestar un mensaje y volver no tiene que
+  // disparar doce pedidos al servidor.
+  useEffect(() => {
+    if (!hayBackend()) return;
+
+    const DESCANSO = 60_000;
+    let ultima = Date.now();
+
+    const alVolver = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - ultima < DESCANSO) return;
+      ultima = Date.now();
+      // Se reusa el mismo camino que el botón "Traer los datos del servidor":
+      // una sola forma de bajar, y lo que está en la cola sigue ganando.
+      setIntento((n) => n + 1);
+    };
+
+    document.addEventListener('visibilitychange', alVolver);
+    // `online` por separado: volvió la señal después de un rato sin nada.
+    window.addEventListener('online', alVolver);
+    return () => {
+      document.removeEventListener('visibilitychange', alVolver);
+      window.removeEventListener('online', alVolver);
+    };
+  }, []);
 
   // ---- quién puede entrar --------------------------------------------------
   //
@@ -1273,6 +1321,16 @@ export const App = () => {
         {sinSubir > 0 && (
           <p className="sincro pend">
             <Icono id="i-cloud" /> {sinSubir} {sinSubir === 1 ? 'operación' : 'operaciones'} sin subir · se suben solas cuando haya señal
+          </p>
+        )}
+        {/*
+          * No se pudo traer lo del servidor y se está mostrando la copia de este
+          * aparato. Antes esto no se decía: la app mostraba números viejos con
+          * la misma cara que los buenos.
+          */}
+        {datosViejos && (
+          <p className="sincro pend">
+            <Icono id="i-cloud" /> No pudimos traer los datos del servidor · estás viendo lo guardado en este aparato
           </p>
         )}
       </main>
