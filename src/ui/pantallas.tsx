@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { aCentavos, pesos, type Cent } from '../domain/money.ts';
-import { diaLocal, diaYMes, fechaLarga, mismoDiaLocal } from '../domain/fechas.ts';
+import { diaLocal, diaYMes, fechaCorta, fechaLarga, mismoDiaLocal } from '../domain/fechas.ts';
 import type { CategoriaGasto, Gasto, Uuid } from '../domain/types.ts';
 import type { EstadoApp } from '../app/estado.ts';
 import {
@@ -29,8 +29,14 @@ import {
 } from './componentes.tsx';
 import { paginaDe } from './paginado.ts';
 import {
-  CATEGORIAS, MEDIOS, centavosDeMonto, textoDeMonto, totalDeGastos,
+  CATEGORIAS, MEDIOS, categoria, centavosDeMonto, porCategoria, textoDeMonto, totalDeGastos,
 } from './gastos.ts';
+import {
+  caja, comprasSinPagar, flujoDeCaja, gastosDelPeriodo, planillaDeCaja, planillaDeGastos,
+  planillaDeProductos, planillaDeStock, planillaPorCobrar, porCobrar, resultado,
+  valorizacionDeStock, ventanaDe, ventasDelPeriodo, ventasPorProducto,
+  type Periodo, type Planilla, type ReporteId,
+} from './numeros.ts';
 import {
   CHAPA, EN_EL_INICIO, FILTROS, ICONO, POR_PAGINA_ACTIVIDAD, SIGNO,
   actividades, agruparPorDia, buscarActividades, filtrarActividades, horaDe, momentoDe,
@@ -38,7 +44,7 @@ import {
 } from './actividad.ts';
 import { borrarBorrador, guardarBorrador, leerBorrador } from './borrador.ts';
 import { bajarTexto, compartirTexto } from './compartir.ts';
-import { conBom, listaDePreciosTexto, nombreDeArchivo, planillaCsv } from './exportar.ts';
+import { conBom, csvDe, listaDePreciosTexto, nombreDeArchivo, planillaCsv } from './exportar.ts';
 import { NEGOCIO } from './marca.ts';
 /*
  * `tour` marca los elementos que el recorrido puede señalar. El import cruzado
@@ -1679,82 +1685,424 @@ export const PantallaClientes = ({ estado, hoy, acc }: Props) => {
 // ---------------------------------------------------------------------------
 // Números
 // ---------------------------------------------------------------------------
+
+/*
+ * LA PANTALLA TIENE DOS NIVELES Y NO TRES
+ *
+ * Arriba, el resumen del período: la caja, el cuadro de resultados y cinco
+ * tarjetas. Tocando una tarjeta se abre su detalle, y de ahí se vuelve. Nada
+ * más.
+ *
+ * El detalle NO es una ruta nueva. Es estado de esta pantalla, y eso es a
+ * propósito: mientras está abierto, la barra de abajo sigue marcando "Números",
+ * que es donde está parado. Una ruta por reporte habría puesto cinco pantallas
+ * en la barra de navegación para algo que es mirar una tabla y volver.
+ */
+
+const PERIODOS: { id: Periodo; texto: string }[] = [
+  { id: 'mes', texto: 'Este mes' },
+  { id: 'anterior', texto: 'Mes anterior' },
+  { id: 'personalizado', texto: 'Otro rango' },
+];
+
+/** El signo y el color de un importe que entra o sale. */
+const Monto = ({ cent, direccion }: { cent: Cent; direccion: 'entra' | 'sale' }) => (
+  <b className={direccion === 'entra' ? 'entra' : 'sale'}>
+    {direccion === 'entra' ? '+' : '−'} {plata(cent)}
+  </b>
+);
+
+const porcentaje = (m: number): string => `${Math.round(m * 100)}%`;
+
 export const PantallaNumeros = ({ estado, hoy }: Props) => {
-  const v = useMemo(() => vistaNumeros(estado, hoy, 30), [estado, hoy]);
-  const max = Math.max(...v.ultimos7.map((d) => d.ventaCent), 1);
-  const maxU = Math.max(...v.masVendidos.map((t) => t.unidades), 1);
+  const [periodo, setPeriodo] = useState<Periodo>('mes');
+  // Arranca en "del 1 a hoy": es el rango a mano más probable, y así los dos
+  // campos nunca están vacíos, que es cuando un input de fecha se ve roto.
+  const [desde, setDesde] = useState(`${diaLocal(hoy).slice(0, 7)}-01`);
+  const [hasta, setHasta] = useState(diaLocal(hoy));
+  const [abierto, setAbierto] = useState<ReporteId | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  const v = useMemo(
+    () => ventanaDe(periodo, hoy, { desde, hasta }),
+    [periodo, hoy, desde, hasta],
+  );
+
+  const movimientos = useMemo(() => flujoDeCaja(estado, v), [estado, v]);
+  const c = useMemo(() => caja(movimientos), [movimientos]);
+  const res = useMemo(() => resultado(estado, v), [estado, v]);
+  const sinPagar = useMemo(() => comprasSinPagar(estado, v), [estado, v]);
+  const productos = useMemo(() => ventasPorProducto(estado, v), [estado, v]);
+  const gastos = useMemo(() => gastosDelPeriodo(estado, v), [estado, v]);
+  const deudas = useMemo(() => porCobrar(estado, hoy), [estado, hoy]);
+  const stock = useMemo(() => valorizacionDeStock(estado), [estado]);
+  const semana = useMemo(() => vistaNumeros(estado, hoy, 30).ultimos7, [estado, hoy]);
+
+  const hayVentas = ventasDelPeriodo(estado, v).length > 0;
+
+  const bajar = (nombre: string, p: Planilla) => {
+    setAviso(null);
+    try {
+      bajarTexto(
+        nombreDeArchivo(`${nombre}-${NEGOCIO}`, diaLocal(hoy), 'csv'),
+        conBom(csvDe(p.columnas, p.filas)),
+        'text/csv;charset=utf-8',
+      );
+      setAviso('Se bajó la planilla. Abrila con Excel: ya viene en columnas.');
+    } catch {
+      setAviso('No se pudo bajar la planilla en este navegador.');
+    }
+  };
+
+  // -------------------------------------------------------------------------
+  // El detalle de un reporte
+  // -------------------------------------------------------------------------
+  if (abierto) {
+    const volver = (
+      <button type="button" className="volver" onClick={() => { setAbierto(null); setAviso(null); }}>
+        <Icono id="i-back" /> Números
+      </button>
+    );
+
+    const pie = aviso && <p className="aviso-exp">{aviso}</p>;
+
+    if (abierto === 'caja') {
+      return (
+        <div className="view">
+          {volver}
+          <div className="section-h"><h2>Flujo de caja</h2><span className="hint">{v.titulo}</span></div>
+          <div className="kpi">
+            <div><b className="entra">{plata(c.entroCent)}</b><span>entró</span></div>
+            <div><b className="sale">{plata(c.salioCent)}</b><span>salió</span></div>
+          </div>
+          {movimientos.length === 0
+            ? <Alerta tipo="ok" icono="i-cash" titulo="No se movió plata en este período"
+                texto="Ni cobros ni salidas. Probá con otro período." />
+            : (
+              <div className="lista">
+                {movimientos.map((m, i) => (
+                  <div className="row" key={`${m.fecha}-${i}`}>
+                    <span className="row-main">
+                      <b>{m.concepto}</b>
+                      <span>{fechaCorta(m.fecha)} · {m.detalle}</span>
+                    </span>
+                    <span className="row-end"><Monto cent={m.montoCent} direccion={m.direccion} /></span>
+                  </div>
+                ))}
+              </div>
+            )}
+          <button type="button" className="btn ghost"
+            onClick={() => bajar('caja', planillaDeCaja(movimientos))}>
+            <Icono id="i-up" /> Bajar a Excel
+          </button>
+          {pie}
+        </div>
+      );
+    }
+
+    if (abierto === 'productos') {
+      return (
+        <div className="view">
+          {volver}
+          <div className="section-h"><h2>Ventas y margen por producto</h2><span className="hint">{v.titulo}</span></div>
+          {productos.length === 0
+            ? <Alerta tipo="ok" icono="i-box" titulo="No vendiste nada en este período"
+                texto="Cuando cargues una venta, acá vas a ver qué te dejó cada producto." />
+            : (
+              <div className="lista">
+                {productos.map((p) => (
+                  <div className="row" key={p.productoId}>
+                    <span className="row-main">
+                      <b><Codigo valor={p.codigo} />{p.nombre}</b>
+                      <span>{p.unidades} u. · vendiste {plata(p.ventaCent)}</span>
+                    </span>
+                    <span className="row-end">
+                      <b>{plata(p.gananciaCent)}</b>
+                      <span>{porcentaje(p.margen)} de margen</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          <button type="button" className="btn ghost"
+            onClick={() => bajar('productos', planillaDeProductos(productos))}>
+            <Icono id="i-up" /> Bajar a Excel
+          </button>
+          {pie}
+        </div>
+      );
+    }
+
+    if (abierto === 'gastos') {
+      const desglose = porCategoria(gastos);
+      return (
+        <div className="view">
+          {volver}
+          <div className="section-h"><h2>Gastos operativos</h2><span className="hint">{v.titulo}</span></div>
+          {gastos.length === 0
+            ? <Alerta tipo="ok" icono="i-fuel" titulo="No cargaste gastos en este período"
+                texto="La nafta, el flete, las bolsas. Se cargan desde el inicio, con Cargar un gasto." />
+            : (
+              <>
+                <div className="card">
+                  <div className="eyebrow">En qué se fue</div>
+                  <div className="rank" style={{ marginTop: 12 }}>
+                    {desglose.map((d) => (
+                      <div className="rank-item" key={d.categoria.id}>
+                        <b>{d.categoria.texto}</b><em>{plata(d.totalCent)}</em>
+                        <span className="rank-track"><i style={{ width: `${d.porcentaje}%` }} /></span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="lista">
+                  {gastos.map((g) => (
+                    <div className="row" key={g.id}>
+                      <span className="thumb"><Icono id={categoria(g.categoria).icono} /></span>
+                      <span className="row-main">
+                        <b>{g.nota ?? categoria(g.categoria).texto}</b>
+                        <span>{fechaCorta(g.fecha)} · {categoria(g.categoria).texto} · {g.medio}</span>
+                      </span>
+                      <span className="row-end"><b className="sale">{plata(g.montoCent)}</b></span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          <button type="button" className="btn ghost"
+            onClick={() => bajar('gastos', planillaDeGastos(gastos))}>
+            <Icono id="i-up" /> Bajar a Excel
+          </button>
+          {pie}
+        </div>
+      );
+    }
+
+    if (abierto === 'cobrar') {
+      return (
+        <div className="view">
+          {volver}
+          <div className="section-h"><h2>Lo que te deben</h2><span className="hint">a hoy</span></div>
+          <Alerta tipo="ok" icono="i-clock" titulo="Esto no depende del período"
+            texto="Una deuda es plata que está en la calle hoy, no algo que pasó en un mes, así que no cambia al cambiar de período. Acá se mira y se baja a Excel; para cobrar, la pantalla es Me deben." />
+          {deudas.length === 0
+            ? <Alerta tipo="ok" icono="i-check" titulo="No te debe nadie" texto="Está todo cobrado." />
+            : (
+              <div className="lista">
+                {deudas.map((d) => (
+                  <div className="row" key={d.clienteId}>
+                    <span className="row-main">
+                      <b>{d.nombre}</b>
+                      <span>{d.dias === null ? 'sin fecha' : d.dias === 0 ? 'de hoy' : `hace ${d.dias} días`}</span>
+                    </span>
+                    <span className="row-end"><b>{plata(d.saldoCent)}</b></span>
+                  </div>
+                ))}
+              </div>
+            )}
+          <button type="button" className="btn ghost"
+            onClick={() => bajar('por-cobrar', planillaPorCobrar(deudas))}>
+            <Icono id="i-up" /> Bajar a Excel
+          </button>
+          {pie}
+        </div>
+      );
+    }
+
+    return (
+      <div className="view">
+        {volver}
+        <div className="section-h"><h2>Valorización de stock</h2><span className="hint">a hoy</span></div>
+        <div className="kpi">
+          <div><b>{plata(stock.totalCent)}</b><span>en mercadería</span></div>
+          <div><b>{stock.unidades}</b><span>unidades</span></div>
+        </div>
+        {stock.sinCosto > 0 && (
+          <Alerta tipo="warn" icono="i-alert"
+            titulo={`${stock.sinCosto} ${stock.sinCosto === 1 ? 'producto no suma' : 'productos no suman'}`}
+            texto="Tienen stock pero no tienen costo cargado, así que no entran en el total. Se arregla cargando la entrada de esa mercadería." />
+        )}
+        {stock.filas.length === 0
+          ? <Alerta tipo="ok" icono="i-box" titulo="No hay stock cargado"
+              texto="Cuando entres mercadería, acá vas a ver cuánta plata tenés parada." />
+          : (
+            <div className="lista">
+              {stock.filas.map((f) => (
+                <div className={`row ${f.stock < 0 ? 'anulada' : ''}`} key={f.productoId}>
+                  <span className="row-main">
+                    <b><Codigo valor={f.codigo} />{f.nombre}</b>
+                    <span>
+                      {f.stock} u.
+                      {f.costoCent === null ? ' · sin costo cargado' : ` × ${plata(f.costoCent)}`}
+                    </span>
+                  </span>
+                  <span className="row-end">
+                    <b>{f.valorCent === null ? '—' : plata(f.valorCent)}</b>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        <button type="button" className="btn ghost"
+          onClick={() => bajar('stock', planillaDeStock(stock.filas))}>
+          <Icono id="i-up" /> Bajar a Excel
+        </button>
+        {pie}
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // El resumen
+  // -------------------------------------------------------------------------
+  const tarjetas: { id: ReporteId; titulo: string; monto: string; pie: string; icono: string }[] = [
+    {
+      id: 'caja', titulo: 'Flujo de caja', icono: 'i-cash',
+      monto: plata(c.netoCent),
+      pie: `${movimientos.length} ${movimientos.length === 1 ? 'movimiento' : 'movimientos'}`,
+    },
+    {
+      id: 'productos', titulo: 'Ventas por producto', icono: 'i-box',
+      monto: plata(res.brutaCent),
+      pie: `${productos.length} ${productos.length === 1 ? 'producto' : 'productos'}`,
+    },
+    {
+      id: 'gastos', titulo: 'Gastos operativos', icono: 'i-fuel',
+      monto: plata(res.gastosCent),
+      pie: `${gastos.length} ${gastos.length === 1 ? 'gasto' : 'gastos'}`,
+    },
+    {
+      id: 'cobrar', titulo: 'Lo que te deben', icono: 'i-wallet',
+      monto: plata(deudas.reduce((a, d) => a + d.saldoCent, 0)),
+      pie: 'a hoy',
+    },
+    {
+      id: 'stock', titulo: 'Stock valorizado', icono: 'i-store',
+      monto: plata(stock.totalCent),
+      pie: 'a hoy',
+    },
+  ];
+
+  const maxSemana = Math.max(...semana.map((d) => d.ventaCent), 1);
 
   return (
     <div className="view">
-      <div className="hero-n" {...tour('ganancia')}>
-        <span>Te quedó este mes</span>
-        <b>{plata(v.gananciaCent)}</b>
-        <em>después de descontar lo que te costó la mercadería</em>
+      <div className="chips periodo">
+        {PERIODOS.map((p) => (
+          <button key={p.id} type="button" className={`chip ${p.id === periodo ? 'on' : ''}`}
+            aria-pressed={p.id === periodo} onClick={() => setPeriodo(p.id)}>
+            {p.texto}
+          </button>
+        ))}
       </div>
 
-      {/*
-        * Sin ventas los números son todos cero, que es correcto pero no dice
-        * nada. Conviene aclarar que está vacío porque todavía no vendió, y no
-        * porque el mes le fue mal.
-        */}
-      {estado.ventas.filter((v) => !v.anuladaEn).length === 0 && (
-        <Alerta tipo="ok" icono="i-chart" titulo="Todavía no hay ventas para medir"
+      {periodo === 'personalizado' && (
+        <div className="card rango-mano">
+          <label className="campo">
+            <span>Desde</span>
+            <input type="date" value={desde} max={hasta}
+              onChange={(ev: ChangeEvent<HTMLInputElement>) => setDesde(ev.target.value)} />
+          </label>
+          <label className="campo">
+            <span>Hasta</span>
+            <input type="date" value={hasta} min={desde}
+              onChange={(ev: ChangeEvent<HTMLInputElement>) => setHasta(ev.target.value)} />
+          </label>
+        </div>
+      )}
+
+      <div className="hero-n" {...tour('ganancia')}>
+        <span>Te quedó {v.titulo}</span>
+        <b>{plata(res.netaCent)}</b>
+        <em>después de la mercadería y de los gastos</em>
+      </div>
+
+      {!hayVentas && (
+        <Alerta tipo="ok" icono="i-chart" titulo="Todavía no hay ventas en este período"
           texto="Estos números se llenan solos con cada venta que cargues. No hay nada que configurar." />
       )}
 
-      <div className="kpi">
-        <div><b>{plata(v.ventasCent)}</b><span>vendiste</span></div>
-        <div><b>{plata(v.costoCent)}</b><span>te costó</span></div>
+      {/* ------------------------------------------------------------------
+        * La caja. Va ANTES del cuadro de resultados porque es la pregunta que
+        * se hace todos los días —"¿cuánta plata me quedó?"— mientras que el
+        * resultado es la que se hace a fin de mes.
+        * ---------------------------------------------------------------- */}
+      <div className="card caja">
+        <div className="section-h" style={{ margin: 0 }}>
+          <h2>La caja</h2><span className="hint">plata que se movió</span>
+        </div>
+        <div className="kpi" style={{ marginTop: 12 }}>
+          <div><b className="entra">{plata(c.entroCent)}</b><span>entró</span></div>
+          <div><b className="sale">{plata(c.salioCent)}</b><span>salió</span></div>
+        </div>
+        <div className={`neto ${c.netoCent < 0 ? 'rojo' : ''}`}>
+          <span>Quedó</span><b>{plata(c.netoCent)}</b>
+        </div>
+      </div>
+
+      {sinPagar.cuantas > 0 && (
+        <Alerta tipo="warn" icono="i-alert" titulo="Falta contar lo que le debés a proveedores"
+          texto={`Hay ${sinPagar.cuantas} ${sinPagar.cuantas === 1 ? 'compra' : 'compras'} en cuenta por ${plata(sinPagar.totalCent)} en este período. No salen de la caja porque todavía no las pagaste, y la app todavía no registra pagos a proveedores: cuando los pagues, esa plata no va a figurar. Avisame y lo agregamos.`} />
+      )}
+
+      {/* ------------------------------------------------------------------
+        * El cuadro de resultados. Cinco renglones y en este orden, porque es
+        * una resta que se lee de arriba abajo: si se reordenan, deja de
+        * explicarse solo.
+        * ---------------------------------------------------------------- */}
+      <div className="card resultado">
+        <div className="section-h" style={{ margin: 0 }}>
+          <h2>Cómo te fue</h2><span className="hint">la ganancia del negocio</span>
+        </div>
+        <dl>
+          <div><dt>Vendiste</dt><dd>{plata(res.ventasCent)}</dd></div>
+          <div className="resta"><dt>Te costó la mercadería</dt><dd>− {plata(res.costoCent)}</dd></div>
+          <div className="sub"><dt>Ganancia bruta</dt><dd>{plata(res.brutaCent)}</dd></div>
+          <div className="resta"><dt>Gastos del negocio</dt><dd>− {plata(res.gastosCent)}</dd></div>
+          <div className="total"><dt>Te quedó</dt><dd>{plata(res.netaCent)}</dd></div>
+        </dl>
+        {res.ventasCent > 0 && (
+          <p className="margenes">
+            De cada $100 que vendés te quedan <b>{porcentaje(res.margenNeto)}</b> limpios
+            {' '}(antes de los gastos, {porcentaje(res.margenBruto)}).
+          </p>
+        )}
+      </div>
+
+      <div className="section-h"><h2>Para mirar de cerca</h2><span className="hint">se bajan a Excel</span></div>
+      <div className="reportes" {...tour('reportes')}>
+        {tarjetas.map((t) => (
+          <button key={t.id} type="button" className="rep" onClick={() => setAbierto(t.id)}>
+            <span className="rep-ico"><Icono id={t.icono} /></span>
+            <span className="rep-txt">
+              <b>{t.titulo}</b>
+              <em>{t.monto}</em>
+              <span>{t.pie}</span>
+            </span>
+            <Icono id="i-arrow" />
+          </button>
+        ))}
       </div>
 
       <div className="card">
         <div className="section-h" style={{ margin: 0 }}>
-          <h2>Los últimos 7 días</h2><span className="hint">cuánto vendiste por día</span>
+          <h2>Los últimos 7 días</h2><span className="hint">no depende del período</span>
         </div>
         <div className="chart">
-          {v.ultimos7.map((d) => {
-            const destacado = d.esHoy || d.ventaCent === max;
+          {semana.map((d) => {
+            const destacado = d.esHoy || d.ventaCent === maxSemana;
             return (
               <div key={d.diaIso}
                 className={`cbar ${d.esHoy ? 'today' : ''} ${d.ventaCent === 0 ? 'zero' : destacado ? '' : 'dim'}`}
                 title={`${d.etiqueta}: ${d.ventaCent ? plata(d.ventaCent) : 'no saliste'}`}>
                 {destacado && d.ventaCent > 0 && <b>{plataCorta(d.ventaCent)}</b>}
-                <i style={{ height: `${Math.max(3, (d.ventaCent / max) * 100)}%` }} />
+                <i style={{ height: `${Math.max(3, (d.ventaCent / maxSemana) * 100)}%` }} />
                 <em>{d.etiqueta}</em>
               </div>
             );
           })}
         </div>
       </div>
-
-      {v.masVendidos.length > 0 && (
-        <div className="card">
-          <div className="section-h" style={{ margin: 0 }}>
-            <h2>Lo que más se te va</h2><span className="hint">unidades del mes</span>
-          </div>
-          <div className="rank" style={{ marginTop: 14 }}>
-            {v.masVendidos.map((t) => (
-              <div className="rank-item" key={t.productoId}>
-                <b>{t.nombre}</b><em>{t.unidades} u.</em>
-                <span className="rank-track"><i style={{ width: `${(t.unidades / maxU) * 100}%` }} /></span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {v.masRentable && (
-        <div className="card">
-          <div className="eyebrow">El que más te deja</div>
-          <div className="row" style={{ border: 0, padding: '11px 0 0', background: 'none' }}>
-            <span className="thumb"><Icono id="i-box" /></span>
-            <span className="row-main">
-              <b>{v.masRentable.nombre}</b>
-              <span>te queda {plata(v.masRentable.gananciaCent)} limpio por unidad</span>
-            </span>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

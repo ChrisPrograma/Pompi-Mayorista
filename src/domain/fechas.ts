@@ -153,6 +153,44 @@ export const mismoMesLocal = (a: string, b: string): boolean => mesLocal(a) === 
 export const nombreDelMes = (iso: string): string =>
   new Date(iso).toLocaleDateString('es-AR', { timeZone: ZONA, month: 'long' });
 
+/*
+ * Los tres de abajo trabajan sobre un mes suelto —`2026-09`— y no sobre un
+ * instante. Los usa la pantalla de Números, que mira períodos cerrados y no
+ * "desde hace N días".
+ *
+ * Adentro se ancla todo al día 15 a las 12:00 UTC. El 15 y no el 1 porque el
+ * primero de mes a las 00:00, mirado desde acá, todavía es el mes anterior: el
+ * corrimiento de tres horas alcanzaría para que "septiembre" diga "agosto".
+ * A mitad de mes no hay zona horaria que lo mueva.
+ */
+
+/** El mes `2026-09` corrido N meses. `-1` da `2026-08`; `-9` da `2025-12`. */
+export const mesDesplazado = (mes: string, meses: number): string => {
+  const [anio = 0, m = 1] = mes.split('-').map(Number);
+  const d = new Date(Date.UTC(anio, m - 1 + meses, 15, 12));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+
+/**
+ * El último día del mes: `2026-09` → `2026-09-30`.
+ *
+ * El día 0 del mes siguiente ES el último del actual, y así el año bisiesto lo
+ * resuelve el calendario y no una tabla escrita a mano.
+ */
+export const ultimoDiaDelMes = (mes: string): string => {
+  const [anio = 0, m = 1] = mes.split('-').map(Number);
+  const dia = new Date(Date.UTC(anio, m, 0, 12)).getUTCDate();
+  return `${mes}-${String(dia).padStart(2, '0')}`;
+};
+
+/** "septiembre de 2026" — el título del período en la pantalla de Números. */
+export const nombreDeMesYAnio = (mes: string): string =>
+  new Date(`${mes}-15T12:00:00.000Z`).toLocaleDateString('es-AR', {
+    timeZone: 'UTC',
+    month: 'long',
+    year: 'numeric',
+  });
+
 /**
  * Rangos que se pueden mirar desde el inicio.
  *
