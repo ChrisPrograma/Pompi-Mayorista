@@ -23,6 +23,7 @@ const TABLAS: DefinicionTabla[] = [
   { nombre: 'compras', clave: 'id', indices: ['proveedorId', 'fecha'] },
   { nombre: 'ventas', clave: 'id', indices: ['clienteId', 'fecha'] },
   { nombre: 'pagos', clave: 'id', indices: ['clienteId', 'fecha'] },
+  { nombre: 'gastos', clave: 'id', indices: ['fecha'] },
   { nombre: 'sugerencias', clave: 'id', indices: ['estado'] },
   { nombre: 'cola', clave: 'id', indices: ['estado'] },
   { nombre: 'config', clave: 'clave' },
@@ -43,7 +44,7 @@ export const cargarEstado = async (): Promise<EstadoApp | null> => {
   ]);
   if (!negocioId || !listaId) return null;
 
-  const [productos, clientes, proveedores, precios, movimientos, compras, ventas, pagos, sugerencias] =
+  const [productos, clientes, proveedores, precios, movimientos, compras, ventas, pagos, gastos, sugerencias] =
     await Promise.all([
       base.todos<EstadoApp['productos'][number]>('productos'),
       base.todos<EstadoApp['clientes'][number]>('clientes'),
@@ -53,13 +54,14 @@ export const cargarEstado = async (): Promise<EstadoApp | null> => {
       base.todos<EstadoApp['compras'][number]>('compras'),
       base.todos<EstadoApp['ventas'][number]>('ventas'),
       base.todos<EstadoApp['pagos'][number]>('pagos'),
+      base.todos<EstadoApp['gastos'][number]>('gastos'),
       base.todos<EstadoApp['sugerencias'][number]>('sugerencias'),
     ]);
 
   return {
     negocioId: negocioId.valor as string,
     listaId: listaId.valor as string,
-    productos, clientes, proveedores, precios, movimientos, compras, ventas, pagos, sugerencias,
+    productos, clientes, proveedores, precios, movimientos, compras, ventas, pagos, gastos, sugerencias,
     parametros: (parametros?.valor as EstadoApp['parametros']) ?? PARAMETROS_DEFAULT,
   };
 };
@@ -81,6 +83,7 @@ export const guardarEstado = async (e: EstadoApp): Promise<void> => {
     base.guardarMuchos('compras', e.compras),
     base.guardarMuchos('ventas', e.ventas),
     base.guardarMuchos('pagos', e.pagos),
+    base.guardarMuchos('gastos', e.gastos),
     base.guardarMuchos('sugerencias', e.sugerencias),
   ]);
 };
@@ -102,7 +105,7 @@ const SIN_SUBIR = ['pendiente', 'enviando', 'error'];
 /** Las tablas de datos. Sin `cola` ni `config`: esas dos no son datos del negocio. */
 const DATOS = [
   'productos', 'clientes', 'proveedores', 'precios',
-  'movimientos', 'compras', 'ventas', 'pagos', 'sugerencias',
+  'movimientos', 'compras', 'ventas', 'pagos', 'gastos', 'sugerencias',
 ];
 
 /**

@@ -18,7 +18,7 @@
  */
 
 export const RUTAS = [
-  'hoy', 'actividad', 'vender', 'deudas', 'cosas',
+  'hoy', 'actividad', 'vender', 'gasto', 'deudas', 'cosas',
   'productos', 'clientes', 'ingreso', 'proveedores', 'numeros',
 ] as const;
 

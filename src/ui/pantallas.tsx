@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { aCentavos, pesos, type Cent } from '../domain/money.ts';
-import { diaLocal, diaYMes, fechaLarga } from '../domain/fechas.ts';
-import type { Uuid } from '../domain/types.ts';
+import { diaLocal, diaYMes, fechaLarga, mismoDiaLocal } from '../domain/fechas.ts';
+import type { CategoriaGasto, Gasto, Uuid } from '../domain/types.ts';
 import type { EstadoApp } from '../app/estado.ts';
 import {
   sugerenciasPendientes,
@@ -28,6 +28,9 @@ import {
   Alerta, Cantidad, Codigo, Icono, Paginado, claseCategoria, plata, plataCorta,
 } from './componentes.tsx';
 import { paginaDe } from './paginado.ts';
+import {
+  CATEGORIAS, MEDIOS, centavosDeMonto, textoDeMonto, totalDeGastos,
+} from './gastos.ts';
 import {
   CHAPA, EN_EL_INICIO, FILTROS, ICONO, POR_PAGINA_ACTIVIDAD, SIGNO,
   actividades, agruparPorDia, buscarActividades, filtrarActividades, horaDe, momentoDe,
@@ -64,6 +67,13 @@ export interface Acciones {
     cobradoCent: Cent,
   ) => void;
   cobrar: (clienteId: Uuid) => void;
+  /** Carga un gasto operativo: flete, combustible, empaque. */
+  gastar: (
+    montoCent: Cent,
+    categoria: CategoriaGasto,
+    medio: Gasto['medio'],
+    nota?: string,
+  ) => void;
   entrar: (
     proveedorId: Uuid,
     items: { productoId: Uuid; cantidad: number; costoUnitarioCent: Cent }[],
@@ -78,6 +88,8 @@ export interface Acciones {
   verVenta: (id: Uuid) => void;
   /** Abre el detalle de un ingreso de mercadería, con la opción de anularlo. */
   verIngreso: (id: Uuid) => void;
+  /** Abre el detalle de un gasto, con la opción de anularlo. */
+  verGasto: (id: Uuid) => void;
   /** Abre la pantalla de ingreso cargada con los datos de ese, para corregirlo. */
   corregirIngreso: (id: Uuid) => void;
   nuevoProducto: () => void;
@@ -283,6 +295,7 @@ const FilaDeActividad = ({ a, cuando, alTocar }: {
 const abrir = (a: Actividad, acc: Acciones) => () => {
   if (a.destino.que === 'venta') acc.verVenta(a.destino.id);
   else if (a.destino.que === 'ingreso') acc.verIngreso(a.destino.id);
+  else if (a.destino.que === 'gasto') acc.verGasto(a.destino.id);
   else acc.verCliente(a.destino.id);
 };
 
@@ -367,6 +380,17 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
       <button className="second-action" {...tour('me-llego')} onClick={() => acc.ir('ingreso')}>
         <span className="circ"><Icono id="i-inbox" /></span>
         <span><b>Me llegó mercadería</b><span>Cargás lo que te trajo el proveedor</span></span>
+        <Icono id="i-arrow" clase="ico-arrow ico-s" />
+      </button>
+
+      {/*
+        * El gasto va acá, al lado de las otras dos, y no escondido en un menú:
+        * se carga parado al lado del surtidor, con el ticket en la mano. Si hay
+        * que buscarlo, no se carga.
+        */}
+      <button className="second-action" {...tour('cargar-gasto')} onClick={() => acc.ir('gasto')}>
+        <span className="circ"><Icono id="i-fuel" /></span>
+        <span><b>Cargar un gasto</b><span>Nafta, flete, bolsas, lo que pagaste</span></span>
         <Icono id="i-arrow" clase="ico-arrow ico-s" />
       </button>
 
@@ -475,6 +499,110 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
           </div>
         </>
       )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Cargar un gasto
+// ---------------------------------------------------------------------------
+/**
+ * El formulario de un gasto: cuánto, de qué, y con qué pagó.
+ *
+ * Tiene que poder completarse con el motor andando y el ticket en la mano, así
+ * que es una sola pantalla sin pasos: el importe arriba con el teclado numérico
+ * abierto, las cinco categorías en chapitas grandes, y el resto opcional.
+ *
+ * La nota es opcional A PROPÓSITO. Obligarlo a escribir algo en cada carga
+ * rápida es la forma más segura de que dentro de un mes deje de cargar gastos —
+ * y un gasto sin nota vale infinitamente más que un gasto que no se cargó.
+ */
+export const PantallaGasto = ({ estado, acc }: Props) => {
+  const [monto, setMonto] = useState('');
+  const [cat, setCat] = useState<CategoriaGasto | null>(null);
+  const [medio, setMedio] = useState<Gasto['medio']>('efectivo');
+  const [nota, setNota] = useState('');
+
+  const centavos = centavosDeMonto(monto);
+  const listo = centavos !== null && cat !== null;
+
+  /* Lo gastado hoy, para que vea que lo que carga va a algún lado. */
+  const hoyCent = useMemo(
+    () => totalDeGastos(estado.gastos.filter((g) => mismoDiaLocal(g.fecha, new Date().toISOString()))),
+    [estado.gastos],
+  );
+
+  return (
+    <div className="view">
+      <button className="btn ghost" style={{ alignSelf: 'flex-start', padding: '9px 14px', fontSize: 14 }}
+        onClick={() => acc.ir('hoy')}>
+        <Icono id="i-back" clase="ico-s" /> Inicio
+      </button>
+
+      <div className="section-h">
+        <h2>Cargar un gasto</h2>
+        {hoyCent > 0 && <span className="hint">hoy llevás {plata(hoyCent)}</span>}
+      </div>
+
+      <label className="campo-monto">
+        <span className="campo-et">¿Cuánto fue?</span>
+        <span className="monto-fila">
+          <span className="monto-signo">$</span>
+          {/*
+            * `type="text"` con teclado numérico, igual que el campo de cantidad:
+            * en `type="number"` el teléfono acepta la "e" y el signo menos, y
+            * `select()` no está definido. Ver `cantidad.ts`.
+            */}
+          <input className="monto-input" type="text" inputMode="decimal"
+            placeholder="0" autoComplete="off" autoFocus
+            aria-label="Importe del gasto"
+            value={monto}
+            onChange={(ev: ChangeEvent<HTMLInputElement>) => setMonto(textoDeMonto(ev.target.value))} />
+        </span>
+      </label>
+
+      <p className="eyebrow">¿De qué fue?</p>
+      <div className="cat-grilla">
+        {CATEGORIAS.map((c) => (
+          <button key={c.id} type="button"
+            className={`cat ${c.id === cat ? 'on' : ''}`}
+            aria-pressed={c.id === cat}
+            onClick={() => setCat(c.id)}>
+            <Icono id={c.icono} />
+            <b>{c.texto}</b>
+            <span>{c.ejemplo}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="orden" role="group" aria-label="Con qué lo pagaste">
+        <span className="orden-et">Pagaste con</span>
+        <div className="chips">
+          {MEDIOS.map((m) => (
+            <button key={m.id} type="button" className={`chip ${m.id === medio ? 'on' : ''}`}
+              aria-pressed={m.id === medio} onClick={() => setMedio(m.id)}>
+              {m.texto}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <label className="campo">
+        <span className="campo-et">Una nota, si querés</span>
+        <input type="text" placeholder="Nafta YPF, viaje a Corrientes"
+          value={nota} maxLength={120}
+          onChange={(ev: ChangeEvent<HTMLInputElement>) => setNota(ev.target.value)} />
+      </label>
+
+      <button className="btn lg block" disabled={!listo}
+        onClick={() => { if (listo) acc.gastar(centavos, cat, medio, nota.trim() || undefined); }}>
+        {listo ? `Guardar el gasto de ${plata(centavos)}` : 'Poné el importe y de qué fue'}
+      </button>
+
+      <p className="ingreso-pie">
+        Se descuenta de la caja del mes y de tu ganancia. Si lo cargás mal, se
+        anula: nada se borra.
+      </p>
     </div>
   );
 };

@@ -2,6 +2,9 @@
   "name": "gestion-pompi-mascotas",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "description": "Sistema de gestión para venta mayorista de accesorios para mascotas",
   "type": "module",
   "scripts": {
@@ -12,7 +15,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
-    "test:node": "mkdir -p node_modules/vitest && cp scripts/vitest-shim/* node_modules/vitest/ && node --experimental-strip-types --test src/domain/__tests__/*.test.ts src/app/__tests__/*.test.ts src/data/__tests__/*.test.ts",
+    "test:node": "node scripts/tests.mjs",
     "verificar": "node scripts/verificar-imports.mjs",
     "build:bun": "npm run typecheck:produccion && npm run typecheck:completo && node scripts/build.mjs",
     "typecheck:sin-npm": "tsc -p tsconfig.verificacion.json",

@@ -223,6 +223,7 @@ export const construirSemilla = (hoyIso: string): EstadoApp => {
     compras: [compraVieja, compraNueva],
     ventas,
     pagos,
+    gastos: [],
     sugerencias: [],
     parametros: PARAMETROS_DEFAULT,
   };

@@ -20,13 +20,13 @@ const vacias = (): FilasServidor => ({
   listas: [{ id: LISTA, nombre: 'Mayorista', es_default: true }],
   parametros: [],
   productos: [], clientes: [], proveedores: [], precios: [],
-  movimientos: [], compras: [], ventas: [], pagos: [], sugerencias: [],
+  movimientos: [], compras: [], ventas: [], pagos: [], gastos: [], sugerencias: [],
 });
 
 const estadoVacio = (): EstadoApp => ({
   negocioId: NEGOCIO, listaId: LISTA,
   productos: [], clientes: [], proveedores: [], precios: [],
-  movimientos: [], compras: [], ventas: [], pagos: [], sugerencias: [],
+  movimientos: [], compras: [], ventas: [], pagos: [], gastos: [], sugerencias: [],
   parametros: PARAMETROS_DEFAULT,
 });
 

@@ -24,7 +24,7 @@
 
 import { PARAMETROS_DEFAULT, type EstadoApp, type Parametros } from '../app/estado.ts';
 import type {
-  Cliente, Compra, CompraItem, MovimientoStock, PagoCliente, PrecioVenta,
+  Cliente, Compra, CompraItem, Gasto, MovimientoStock, PagoCliente, PrecioVenta,
   Producto, Proveedor, SugerenciaPrecio, Uuid, Venta, VentaItem,
 } from '../domain/types.ts';
 import { traer } from './servidor.ts';
@@ -232,6 +232,7 @@ export interface FilasServidor {
   compras: Fila[];
   ventas: Fila[];
   pagos: Fila[];
+  gastos: Fila[];
   sugerencias: Fila[];
 }
 
@@ -259,6 +260,7 @@ export const armarEstado = (f: FilasServidor): EstadoApp | null => {
     compras: f.compras.map(aCompra),
     ventas: f.ventas.map(aVenta),
     pagos: f.pagos.map(aPago),
+    gastos: f.gastos.map(aGasto),
     sugerencias: f.sugerencias.map(aSugerencia),
     parametros: aParametros(f.parametros[0]) ?? PARAMETROS_DEFAULT,
   };
@@ -439,6 +441,18 @@ const unirSugerencias = (
 };
 
 /** Junta el estado que bajó con el que había en el dispositivo. */
+/** Una fila de `gastos` del servidor, como la ve el dominio. */
+const aGasto = (f: Fila): Gasto => ({
+  id: f.id as Uuid,
+  negocioId: f.negocio_id as Uuid,
+  montoCent: Number(f.monto_cent),
+  categoria: f.categoria as Gasto['categoria'],
+  medio: f.medio as Gasto['medio'],
+  fecha: iso(f.fecha),
+  ...(txt(f.nota) ? { nota: txt(f.nota) as string } : {}),
+  ...(f.anulada_en ? { anuladaEn: iso(f.anulada_en) } : {}),
+});
+
 export const unir = (
   local: EstadoApp | null,
   remoto: EstadoApp,
@@ -457,6 +471,8 @@ export const unir = (
     compras: unirFilas(local.compras, remoto.compras, enCola),
     ventas: unirFilas(local.ventas, remoto.ventas, enCola),
     pagos: unirFilas(local.pagos, remoto.pagos, enCola),
+    // Un gasto es UNA fila y comparte id con el aparato: unir por id alcanza.
+    gastos: unirFilas(local.gastos, remoto.gastos, enCola),
     sugerencias: unirSugerencias(local.sugerencias, remoto.sugerencias, enCola),
     parametros: remoto.parametros,
   };
@@ -490,7 +506,7 @@ export const descargarEstado = async (): Promise<Descarga> => {
   try {
     const [
       negocios, listas, parametros, productos, clientes, proveedores,
-      precios, movimientos, compras, ventas, pagos, sugerencias,
+      precios, movimientos, compras, ventas, pagos, gastos, sugerencias,
     ] = await Promise.all([
       traer<Fila>('negocios', 'id,nombre'),
       traer<Fila>('listas_precio', 'id,nombre,es_default'),
@@ -507,11 +523,12 @@ export const descargarEstado = async (): Promise<Descarga> => {
       traer<Fila>('compras', '*,compra_items(*)'),
       traer<Fila>('ventas', '*,venta_items(*)'),
       traer<Fila>('pagos_cliente'),
+      traer<Fila>('gastos'),
       traer<Fila>('sugerencias_precio'),
     ]);
     filas = {
       negocios, listas, parametros, productos, clientes, proveedores,
-      precios, movimientos, compras, ventas, pagos, sugerencias,
+      precios, movimientos, compras, ventas, pagos, gastos, sugerencias,
     };
   } catch (e) {
     return {

@@ -34,11 +34,11 @@ import type { EstadoApp } from '../app/estado.ts';
 import { coincide } from './orden.ts';
 
 /** Los cuatro hechos que registra la app. */
-export type TipoActividad = 'venta' | 'cobro' | 'ingreso' | 'anulacion';
+export type TipoActividad = 'venta' | 'cobro' | 'ingreso' | 'gasto' | 'anulacion';
 
 /** Qué pantalla abre una fila cuando la toca. */
 export interface Destino {
-  que: 'venta' | 'ingreso' | 'cliente';
+  que: 'venta' | 'ingreso' | 'cliente' | 'gasto';
   id: Uuid;
 }
 
@@ -180,6 +180,45 @@ export const actividades = (e: EstadoApp): Actividad[] => {
     }
   }
 
+  /*
+   * Los gastos operativos. Son el único hecho que sale de plata sin mercadería
+   * de por medio, y hasta que existieron el feed no podía explicar por qué la
+   * caja no cerraba.
+   */
+  for (const g of e.gastos) {
+    const anulado = Boolean(g.anuladaEn);
+    const cat = CATEGORIAS_POR_ID[g.categoria] ?? g.categoria;
+    filas.push({
+      clave: `gasto:${g.id}`,
+      tipo: 'gasto',
+      cuando: g.fecha,
+      // La nota manda sobre la categoría: "Nafta YPF Corrientes" dice mucho más
+      // que "Combustible", y si no la escribió queda la categoría sola.
+      conQuien: g.nota ?? cat,
+      detalle: g.nota ? cat : MEDIO[g.medio] ?? 'pagado',
+      montoCent: g.montoCent,
+      direccion: anulado ? null : 'sale',
+      estado: anulado ? 'anulado' : MEDIO[g.medio] ?? 'pagado',
+      anulada: anulado,
+      destino: { que: 'gasto', id: g.id },
+    });
+
+    if (g.anuladaEn) {
+      filas.push({
+        clave: `anulacion:${g.id}`,
+        tipo: 'anulacion',
+        cuando: g.anuladaEn,
+        conQuien: g.nota ?? cat,
+        detalle: `Gasto del ${diaCorto(g.fecha)}`,
+        montoCent: g.montoCent,
+        direccion: null,
+        estado: 'se anuló',
+        anulada: true,
+        destino: { que: 'gasto', id: g.id },
+      });
+    }
+  }
+
   for (const p of e.pagos) {
     filas.push({
       clave: `cobro:${p.id}`,
@@ -203,6 +242,19 @@ export const actividades = (e: EstadoApp): Actividad[] => {
  * angosto le come el ancho al nombre del comercio. "por transferencia" empujaba
  * "Pet Shop Huellitas" a dos renglones.
  */
+/*
+ * El nombre de cada categoría, escrito acá y no importado de `gastos.ts`: ese
+ * módulo trae además los íconos y los ejemplos, que el feed no necesita, y
+ * traerlo entero solo por cinco palabras ataría el feed a la capa de dibujo.
+ */
+const CATEGORIAS_POR_ID: Record<string, string> = {
+  flete: 'Flete',
+  combustible: 'Combustible',
+  empaque: 'Empaque',
+  insumos: 'Insumos',
+  otros: 'Otros',
+};
+
 const MEDIO: Record<string, string> = {
   efectivo: 'efectivo',
   transferencia: 'transferencia',
@@ -232,7 +284,7 @@ const ordenar = (filas: Actividad[]): Actividad[] =>
 // Filtrar y buscar
 // ---------------------------------------------------------------------------
 
-export type FiltroActividad = 'todos' | 'ventas' | 'cobros' | 'ingresos' | 'anulados';
+export type FiltroActividad = 'todos' | 'ventas' | 'cobros' | 'ingresos' | 'gastos' | 'anulados';
 
 /**
  * Las chapitas de arriba, en orden.
@@ -247,6 +299,7 @@ export const FILTROS: { id: FiltroActividad; texto: string }[] = [
   { id: 'ventas', texto: 'Ventas' },
   { id: 'cobros', texto: 'Cobros' },
   { id: 'ingresos', texto: 'Ingresos' },
+  { id: 'gastos', texto: 'Gastos' },
   { id: 'anulados', texto: 'Anulados' },
 ];
 
@@ -267,7 +320,10 @@ export const filtrarActividades = (
   if (filtro === 'todos') return lista;
   if (filtro === 'anulados') return lista.filter((a) => a.anulada);
   const tipo: TipoActividad =
-    filtro === 'ventas' ? 'venta' : filtro === 'cobros' ? 'cobro' : 'ingreso';
+    filtro === 'ventas' ? 'venta'
+      : filtro === 'cobros' ? 'cobro'
+      : filtro === 'gastos' ? 'gasto'
+      : 'ingreso';
   return lista.filter((a) => a.tipo === tipo && !a.anulada);
 };
 
@@ -376,6 +432,7 @@ export const ICONO: Record<TipoActividad, string> = {
   venta: 'i-cart',
   cobro: 'i-cash',
   ingreso: 'i-inbox',
+  gasto: 'i-fuel',
   anulacion: 'i-undo',
 };
 
@@ -392,6 +449,7 @@ export const CHAPA: Record<TipoActividad, { texto: string; clase: string }> = {
   venta: { texto: 'Venta', clase: 'ok' },
   cobro: { texto: 'Cobro', clase: 'brand' },
   ingreso: { texto: 'Ingreso', clase: 'warn' },
+  gasto: { texto: 'Gasto', clase: 'warn' },
   anulacion: { texto: 'Anulado', clase: 'bad' },
 };
 

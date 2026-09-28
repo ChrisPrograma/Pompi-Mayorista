@@ -194,6 +194,11 @@ export const transporte: Transporte = {
         return rpc('anular_compra', op.payload);
       case 'anular_venta':
         return rpc('anular_venta', op.payload);
+      case 'registrar_gasto':
+        return rpc('registrar_gasto', { p_id: op.id, ...op.payload });
+      // Igual que las otras dos anulaciones: el id del gasto viaja en el payload.
+      case 'anular_gasto':
+        return rpc('anular_gasto', op.payload);
       case 'trasladar_stock':
         return rpc('trasladar_stock', { p_id: op.id, ...op.payload });
       case 'cambiar_precio':

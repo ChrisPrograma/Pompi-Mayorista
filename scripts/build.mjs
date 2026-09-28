@@ -16,7 +16,7 @@ import {
 const SALIDA = 'dist';
 // OJO: esta lista está también en `vite.config.ts`. Los dos caminos de build
 // copian los mismos archivos sueltos; si se agrega uno, va en los dos lados.
-const SUELTOS = ['icono-192.png', 'icono-512.png', 'icono-maskable-512.png', 'apple-touch-icon.png', 'favicon.ico', '_headers'];
+const SUELTOS = ['icono-192.png', 'icono-512.png', 'icono-maskable-512.png', 'apple-touch-icon.png', 'favicon.ico'];
 
 if (existsSync(SALIDA)) rmSync(SALIDA, { recursive: true });
 mkdirSync(SALIDA, { recursive: true });

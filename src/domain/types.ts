@@ -185,6 +185,40 @@ export interface PagoCliente {
   fechaAcreditacion?: string;
 }
 
+/**
+ * Las categorías de gasto de un mayorista que reparte en la calle.
+ *
+ * Son CINCO a propósito. Una lista larga termina siempre en "otros", y entonces
+ * el desglose no dice nada; con cinco, cada una tiene volumen suficiente como
+ * para que mirarlas sirva de algo. Salen de cómo trabaja él, no de un plan de
+ * cuentas.
+ */
+export type CategoriaGasto = 'flete' | 'combustible' | 'empaque' | 'insumos' | 'otros';
+
+/**
+ * Un gasto operativo: el flete, la nafta, las bolsas, el viático.
+ *
+ * Es lo que faltaba para que la app pueda decir cuánta plata queda de verdad.
+ * Registraba lo que entra y lo que sale en mercadería, pero no lo que cuesta
+ * hacer funcionar el negocio — que en un reparto en la calle no es un detalle.
+ *
+ * Es un HECHO, igual que una venta: no se edita ni se borra. Si se cargó mal se
+ * anula y se vuelve a cargar, así el informe de un mes cerrado no cambia porque
+ * alguien corrigió algo dos meses después.
+ */
+export interface Gasto {
+  id: Uuid;
+  negocioId: Uuid;
+  montoCent: Cent;
+  categoria: CategoriaGasto;
+  medio: MedioPago;
+  /** "Nafta YPF viaje a Corrientes". Opcional: exigirla frena la carga rápida. */
+  nota?: string;
+  fecha: string;
+  /** Cuándo se anuló, o ausente si sigue valiendo. La fila no se borra. */
+  anuladaEn?: string;
+}
+
 export interface SugerenciaPrecio {
   id: Uuid;
   productoId: Uuid;

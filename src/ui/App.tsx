@@ -4,12 +4,13 @@ import {
 } from 'react';
 import { uuidv7 } from '../lib/uuid.ts';
 import { aCentavos, pesos, type Cent } from '../domain/money.ts';
-import { fechaCorta, fechaLarga, fechaYHora, horaLocal, mismoDiaLocal } from '../domain/fechas.ts';
+import { fechaCorta, fechaLarga, fechaYHora, horaLocal, mismoDiaLocal, mismoMesLocal } from '../domain/fechas.ts';
 import { saldoCliente } from '../domain/saldos.ts';
 import type { Uuid } from '../domain/types.ts';
 import {
   activarCliente, activarProducto, activarProveedor, altaCliente, altaProducto, altaProveedor,
-  anularCompra, anularVenta, aplicar, aplicarSugerencias, cambiarPrecio, clienteParecido, cobrar,
+  anularCompra, anularGasto, anularVenta, aplicar, aplicarSugerencias, cambiarPrecio,
+  clienteParecido, cobrar, registrarGasto,
   corregirCosto, corregirIngreso, costoDe, descartarSugerencias, editarCliente, editarProducto,
   editarProveedor, entrarMercaderia, ultimaCompraDe,
   estadoVacio, precioDe, productoConCodigo, productoParecido, vender,
@@ -39,9 +40,14 @@ import {
 } from './componentes.tsx';
 import { RECORRIDO, tour } from './recorrido.ts';
 import { borrarBorrador } from './borrador.ts';
+/*
+ * `categoria` se importa con otro nombre: el manejador de gastos recibe un
+ * parámetro que se llama igual, y el parámetro tapaba a la función.
+ */
+import { MEDIOS, categoria as infoCategoria, totalDeGastos } from './gastos.ts';
 import { NEGOCIO } from './marca.ts';
 import {
-  PantallaActividad, PantallaClientes, PantallaCosas, PantallaDeudas, PantallaHoy,
+  PantallaActividad, PantallaClientes, PantallaCosas, PantallaDeudas, PantallaGasto, PantallaHoy,
   PantallaIngreso, PantallaNumeros, PantallaProductos, PantallaProveedores,
   PantallaVender, type Acciones, type CorreccionIngreso, type Ruta,
 } from './pantallas.tsx';
@@ -60,6 +66,7 @@ const PADRE: Partial<Record<Ruta, Ruta>> = {
   // El historial completo se entra desde el inicio: la pestaña que queda
   // encendida abajo tiene que seguir siendo "Hoy".
   actividad: 'hoy',
+  gasto: 'hoy',
 };
 
 /** Días como los nombra él, no como los numera el sistema. */
@@ -98,6 +105,7 @@ export const App = () => {
   const [fichaVenta, setFichaVenta] = useState<Uuid | null>(null);
   /** El ingreso cuyo detalle está abierto, o null. */
   const [fichaIngreso, setFichaIngreso] = useState<Uuid | null>(null);
+  const [fichaGasto, setFichaGasto] = useState<Uuid | null>(null);
   /**
    * El ingreso que está esperando confirmación para anularse.
    *
@@ -543,6 +551,8 @@ export const App = () => {
 
     verIngreso: (id) => setFichaIngreso(id),
 
+    verGasto: (id) => setFichaGasto(id),
+
     /*
      * Corregir = anular y volver a cargar. La pantalla de ingreso arranca con
      * los datos viejos puestos, él cambia lo que estaba mal, y recién al
@@ -627,6 +637,41 @@ export const App = () => {
     },
 
     cobrar: (clienteId) => setHojaCobro(clienteId),
+
+    /*
+     * Un gasto es la acción más simple del sistema: una fila, sin movimientos
+     * de stock ni asientos. Por eso el manejador entra en veinte líneas y no en
+     * ciento veinte como el de la venta.
+     */
+    gastar: (montoCent, categoria, medio, nota) => {
+      const c = ctx();
+      const r = registrarGasto(estado, { montoCent, categoria, medio, ...(nota ? { nota } : {}) }, c);
+      const g = r.gastos![0]!;
+
+      void despachar(r, [{
+        tipo: 'registrar_gasto', id: g.id,
+        payload: {
+          p_negocio_id: estado.negocioId,
+          p_monto_cent: g.montoCent,
+          p_categoria: g.categoria,
+          p_medio: g.medio,
+          p_nota: g.nota ?? null,
+          p_fecha: g.fecha,
+        },
+      }]);
+
+      const delMes = totalDeGastos(
+        [...estado.gastos, g].filter((x) => mismoMesLocal(x.fecha, hoy)),
+      );
+
+      setExito({
+        titulo: 'Gasto anotado',
+        monto: plata(g.montoCent),
+        texto: `${infoCategoria(g.categoria).texto} · ${g.nota ?? 'sin nota'}`,
+        deltas: [{ etiqueta: 'Gastos del mes', valor: plata(delMes) }],
+      });
+      irA('hoy');
+    },
 
     entrar: (proveedorId, items, condicion, corrigeId) => {
       const c = ctx();
@@ -1211,7 +1256,7 @@ export const App = () => {
   const rutaActiva = PADRE[ruta] ?? ruta;
   const Pantalla = {
     hoy: PantallaHoy, vender: PantallaVender, deudas: PantallaDeudas, cosas: PantallaCosas,
-    actividad: PantallaActividad,
+    actividad: PantallaActividad, gasto: PantallaGasto,
     productos: PantallaProductos, clientes: PantallaClientes,
     ingreso: PantallaIngreso, proveedores: PantallaProveedores, numeros: PantallaNumeros,
   }[ruta];
@@ -1879,6 +1924,68 @@ export const App = () => {
               <button className="btn ghost block" style={{ marginTop: 6, color: 'var(--bad)' }}
                 onClick={() => setConfirmarAnular(c.id)}>
                 Anular este ingreso
+              </button>
+            )}
+          </Hoja>
+        );
+      })()}
+
+      {/*
+        * La ficha de un gasto.
+        *
+        * Existe sobre todo por el botón de anular: sin ella, un gasto tipeado
+        * mal —un cero de más en la nafta— se quedaría para siempre torciendo la
+        * caja y la ganancia, sin ninguna forma de deshacerlo.
+        */}
+      {fichaGasto && (() => {
+        const g = estado.gastos.find((x) => x.id === fichaGasto);
+        if (!g) return null;
+        const cat = infoCategoria(g.categoria);
+
+        return (
+          <Hoja alCerrar={() => setFichaGasto(null)}>
+            <h3>{g.nota ?? cat.texto}</h3>
+            <p className="sub">
+              {fechaYHora(g.fecha)} · {g.anuladaEn ? 'Anulado' : cat.texto}
+            </p>
+
+            {g.anuladaEn && (
+              <Alerta tipo="warn" icono="i-alert" titulo="Este gasto está anulado"
+                texto={`Se anuló el ${fechaYHora(g.anuladaEn)}. Ya no se descuenta de la caja ni de tu ganancia.`} />
+            )}
+
+            <div className="card" style={{ marginTop: 12 }}>
+              <div className="tot-fila">
+                <span style={{ fontWeight: 700 }}>Importe</span>
+                <b className="num">{plata(g.montoCent)}</b>
+              </div>
+              <div className="tot-fila">
+                <span>Categoría</span>
+                <b>{cat.texto}</b>
+              </div>
+              <div className="tot-fila">
+                <span>Pagaste con</span>
+                <b>{MEDIOS.find((m) => m.id === g.medio)?.texto ?? g.medio}</b>
+              </div>
+            </div>
+
+            <button className="btn block" style={{ marginTop: 12 }}
+              onClick={() => setFichaGasto(null)}>Cerrar</button>
+
+            {!g.anuladaEn && (
+              <button className="btn ghost block" style={{ marginTop: 6, color: 'var(--bad)' }}
+                onClick={() => {
+                  const c = ctx();
+                  const r = anularGasto(estado, g.id, c);
+                  void despachar(r, [{
+                    // Id propio: el gasto ya tiene su `registrar_gasto` encolado
+                    // con el suyo, y la cola guarda por id.
+                    tipo: 'anular_gasto', id: c.nuevoId(),
+                    payload: { p_id: g.id, p_fecha: r.gastos![0]!.anuladaEn },
+                  }]);
+                  setFichaGasto(null);
+                }}>
+                Anular este gasto
               </button>
             )}
           </Hoja>

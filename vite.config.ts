@@ -21,7 +21,11 @@ export default defineConfig({
         // donde `require` no existe. Un require() dentro del hook rompe el build
         // recién en el último paso, con 48 módulos ya transformados.
         // OJO: la misma lista está en `scripts/build.mjs`.
-        for (const archivo of ['icono-192.png', 'icono-512.png', 'icono-maskable-512.png', 'apple-touch-icon.png', 'favicon.ico', '_headers']) {
+        //
+        // `_headers` salió el 26/09: era de Netlify, y Vercel no lo lee. Las
+        // cabeceras de caché de este proyecto viven en `vercel.json` y en
+        // ningún otro lado.
+        for (const archivo of ['icono-192.png', 'icono-512.png', 'icono-maskable-512.png', 'apple-touch-icon.png', 'favicon.ico']) {
           if (!existsSync(archivo)) continue;   // falta uno: se avisa, no se rompe
           this.emitFile({
             type: 'asset',

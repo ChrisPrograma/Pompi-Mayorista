@@ -22,6 +22,9 @@ import type {
   PrecioVenta,
   Producto,
   Proveedor,
+  CategoriaGasto,
+  Gasto,
+  MedioPago,
   SugerenciaPrecio,
   Uuid,
   Venta,
@@ -40,6 +43,8 @@ export interface EstadoApp {
   compras: Compra[];
   ventas: Venta[];
   pagos: PagoCliente[];
+  /** Los gastos operativos: fletes, combustible, empaque. Ver `Gasto`. */
+  gastos: Gasto[];
   sugerencias: SugerenciaPrecio[];
   parametros: Parametros;
 }
@@ -70,7 +75,7 @@ export const estadoVacio = (negocioId: Uuid, listaId: Uuid): EstadoApp => ({
   negocioId,
   listaId,
   productos: [], clientes: [], proveedores: [], precios: [],
-  movimientos: [], compras: [], ventas: [], pagos: [], sugerencias: [],
+  movimientos: [], compras: [], ventas: [], pagos: [], gastos: [], sugerencias: [],
   parametros: PARAMETROS_DEFAULT,
 });
 
@@ -101,6 +106,7 @@ export interface Resultado {
   compras?: Compra[];
   movimientos?: MovimientoStock[];
   pagos?: PagoCliente[];
+  gastos?: Gasto[];
   precios?: PrecioVenta[];
   /** Única excepción: precios cuya vigencia se cierra. Son copias, no mutaciones. */
   preciosCerrados?: PrecioVenta[];
@@ -1013,6 +1019,68 @@ export const cobrar = (
   };
 };
 
+/**
+ * Registrar un gasto operativo.
+ *
+ * La acción más simple del sistema, y a propósito: una fila y nada más. Un
+ * gasto no mueve stock ni deuda — solo plata —, así que no arrastra
+ * movimientos, ni renglones, ni asientos compensatorios.
+ *
+ * Eso también es lo que hace que anularlo sea marcar la cabecera y listo.
+ */
+export const registrarGasto = (
+  e: EstadoApp,
+  args: {
+    montoCent: Cent;
+    categoria: CategoriaGasto;
+    medio: MedioPago;
+    nota?: string;
+    /** Para cargar un gasto de ayer. Si no viene, es ahora. */
+    fecha?: string;
+  },
+  ctx: Ctx,
+): Resultado => {
+  /*
+   * `!(x > 0)` y no `x <= 0`: `undefined` y `NaN` también son `false` contra
+   * `<= 0` y pasarían. Es el mismo agujero que tenía `altaProducto` y que dejaba
+   * crear productos sin precio.
+   */
+  if (!(args.montoCent > 0)) throw new Error('El gasto tiene que ser mayor que cero');
+
+  const nota = args.nota?.trim();
+
+  return {
+    gastos: [
+      {
+        id: ctx.nuevoId(),
+        negocioId: e.negocioId,
+        montoCent: args.montoCent,
+        categoria: args.categoria,
+        medio: args.medio,
+        fecha: args.fecha ?? ctx.ahora(),
+        ...(nota ? { nota } : {}),
+      },
+    ],
+  };
+};
+
+/**
+ * Anular un gasto cargado mal.
+ *
+ * No se edita ni se borra: se marca. La fila queda entera y visible, tachada,
+ * y deja de contar en la caja y en la ganancia neta. Es la REGLA 0 aplicada a
+ * la plata que sale.
+ */
+export const anularGasto = (e: EstadoApp, gastoId: Uuid, ctx: Ctx): Resultado => {
+  const gasto = e.gastos.find((g) => g.id === gastoId);
+  if (!gasto) throw new Error('Ese gasto no existe');
+  // Idempotente: anular dos veces no mueve la fecha de anulación, que es la que
+  // ordena el bloque de anulados.
+  if (gasto.anuladaEn) return {};
+
+  return { gastos: [{ ...gasto, anuladaEn: ctx.ahora() }] };
+};
+
 /** Aplicar una sugerencia de precio. Solo se llama desde la confirmación explícita. */
 export const aplicarSugerencias = (
   e: EstadoApp,
@@ -1085,6 +1153,7 @@ export const aplicar = (e: EstadoApp, r: Resultado): EstadoApp => ({
   compras: fusionar(e.compras, r.compras),
   movimientos: fusionar(e.movimientos, r.movimientos),
   pagos: fusionar(e.pagos, r.pagos),
+  gastos: fusionar(e.gastos, r.gastos),
   precios: fusionar(fusionar(e.precios, r.preciosCerrados), r.precios),
   sugerencias: fusionar(fusionar(e.sugerencias, r.sugerencias), r.sugerenciasResueltas),
 });

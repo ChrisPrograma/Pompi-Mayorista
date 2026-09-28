@@ -46,7 +46,7 @@ import type { Ruta } from './pantallas.tsx';
  * trabajo, antes y sin dependencias.
  */
 export const ANCLAS = [
-  'resumen', 'misiones', 'alerta', 'vender-ya', 'me-llego',
+  'resumen', 'misiones', 'alerta', 'vender-ya', 'me-llego', 'cargar-gasto',
   'ultimas-actividades', 'filtros-actividad',
   'lista-clientes', 'cliente-nuevo', 'lista-productos', 'buscador-venta',
   'lista-deudas', 'lista-proveedores', 'hub',
@@ -119,6 +119,13 @@ export const RECORRIDO: PasoRecorrido[] = [
     ruta: 'hoy', destaca: 'ultimas-actividades',
     titulo: 'Lo último que hiciste, todo junto',
     texto: 'Ventas, cobros, entradas de mercadería y anulaciones, en el orden en que pasaron. Tocá cualquiera y se abre con el detalle y el botón para mandar el comprobante por WhatsApp.',
+  },
+
+  // --- gastos ---------------------------------------------------------------
+  {
+    ruta: 'hoy', destaca: 'cargar-gasto',
+    titulo: 'La nafta, el flete, las bolsas',
+    texto: 'Todo lo que pagás para que el negocio funcione se carga acá, en diez segundos: cuánto fue, de qué, y listo. Es lo que hace que la ganancia que ves sea la de verdad y no una cuenta de más.',
   },
 
   // --- cobrar -------------------------------------------------------------

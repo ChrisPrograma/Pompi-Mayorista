@@ -33,6 +33,8 @@ export type Operacion =
   | { tipo: 'registrar_compra'; id: Uuid; payload: Record<string, unknown> }
   | { tipo: 'registrar_pago_cliente'; id: Uuid; payload: Record<string, unknown> }
   | { tipo: 'registrar_pago_proveedor'; id: Uuid; payload: Record<string, unknown> }
+  /** Un gasto operativo: flete, combustible, empaque. Una fila y nada más. */
+  | { tipo: 'registrar_gasto'; id: Uuid; payload: Record<string, unknown> }
   /*
    * Ya no se genera ninguna: el traslado casa → auto se fue en la 009. Se deja
    * porque un aparato que estuvo sin señal puede tener una esperando en la cola,
@@ -54,7 +56,14 @@ export type Operacion =
    */
   | { tipo: 'anular_compra'; id: Uuid; payload: { p_id: Uuid } & Record<string, unknown> }
   /** Anular una venta. Mismo esquema de id propio que `anular_compra`. */
-  | { tipo: 'anular_venta'; id: Uuid; payload: { p_id: Uuid } & Record<string, unknown> };
+  | { tipo: 'anular_venta'; id: Uuid; payload: { p_id: Uuid } & Record<string, unknown> }
+  /**
+   * Anular un gasto. Id propio, por el mismo motivo que las otras dos: el gasto
+   * ya tiene su `registrar_gasto` encolado con ese id, y la cola guarda por id.
+   * Reusarlo pisaría el alta y el gasto nunca llegaría al servidor — quedaría
+   * anulado del lado del aparato y sin existir del lado del servidor.
+   */
+  | { tipo: 'anular_gasto'; id: Uuid; payload: { p_id: Uuid } & Record<string, unknown> };
 
 /**
  * Qué filas toca una operación.
@@ -66,7 +75,7 @@ export type Operacion =
  * compra sin anular y el stock volvería a estar mal.
  */
 export const idsAfectados = (op: Operacion): Uuid[] =>
-  op.tipo === 'anular_compra' || op.tipo === 'anular_venta'
+  op.tipo === 'anular_compra' || op.tipo === 'anular_venta' || op.tipo === 'anular_gasto'
     ? [op.id, op.payload.p_id]
     : [op.id];
 
