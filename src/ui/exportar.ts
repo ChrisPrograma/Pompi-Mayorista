@@ -134,6 +134,23 @@ export const planillaCsv = (filas: FilaDePlanilla[]): string => {
 };
 
 /**
+ * Cualquier tabla en CSV, con las mismas reglas que la planilla.
+ *
+ * Existe porque los cinco reportes de Números se bajan igual y tienen columnas
+ * distintas. Escribir cinco armadores de CSV sería escribir cinco veces las
+ * mismas tres decisiones —punto y coma, coma decimal, comillas escapadas— y
+ * equivocarse en una: el día que alguien agregue un reporte nuevo copiando el
+ * de al lado, esa copia es la que va a salir mal.
+ *
+ * Los importes se pasan en PESOS, no en centavos: quien arma las filas divide
+ * por 100 una vez, donde sabe qué columna es plata y cuál es una cantidad.
+ */
+export const csvDe = (
+  columnas: readonly string[],
+  filas: (string | number | null)[][],
+): string => [columnas.join(';'), ...filas.map((f) => f.map(campo).join(';'))].join('\r\n');
+
+/**
  * El CSV como texto para bajar, con BOM adelante.
  *
  * Sin el BOM, Excel abre el archivo en su codificación vieja y los acentos salen

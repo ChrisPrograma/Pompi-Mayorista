@@ -51,7 +51,7 @@ export const ANCLAS = [
   'lista-clientes', 'cliente-nuevo', 'lista-productos', 'buscador-venta',
   'lista-deudas', 'lista-proveedores', 'hub',
   'producto-nuevo', 'lista-productos-todos', 'buscador',
-  'lista-clientes-todos', 'lista-proveedores-todos', 'ganancia',
+  'lista-clientes-todos', 'lista-proveedores-todos', 'ganancia', 'reportes',
 ] as const;
 
 export type Ancla = (typeof ANCLAS)[number];
@@ -190,7 +190,12 @@ export const RECORRIDO: PasoRecorrido[] = [
   {
     ruta: 'numeros', destaca: 'ganancia',
     titulo: 'Lo que te quedó de verdad',
-    texto: 'No las ventas: la ganancia, ya descontado lo que te costó la mercadería. Es el número que nadie sabe sin ponerse a hacer cuentas.',
+    texto: 'No las ventas: la ganancia, ya descontado lo que te costó la mercadería Y los gastos del negocio. Arriba elegís el mes que querés mirar. Es el número que nadie sabe sin ponerse a hacer cuentas.',
+  },
+  {
+    ruta: 'numeros', destaca: 'reportes',
+    titulo: 'Y la plata que se movió',
+    texto: 'La caja es otra cosa que la ganancia, y las dos importan: una venta a cuenta te deja ganancia y no te pone un peso en el bolsillo. Acá abajo abrís cada cosa en detalle —la caja, los productos, los gastos, lo que te deben y el stock— y cualquiera se baja a Excel.',
   },
   {
     ruta: 'hoy',
