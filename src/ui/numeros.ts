@@ -532,7 +532,7 @@ export const planillaDeGastos = (gastos: Gasto[]): Planilla => ({
 });
 
 export const planillaPorCobrar = (filas: FilaPorCobrar[]): Planilla => ({
-  columnas: ['Comercio', 'Debe desde', 'Días', 'Saldo'],
+  columnas: ['Comercio', 'Saldo desde', 'Días', 'Saldo'],
   filas: filas.map((f) => [
     f.nombre,
     f.desdeIso ? fechaParaPlanilla(f.desdeIso) : '',

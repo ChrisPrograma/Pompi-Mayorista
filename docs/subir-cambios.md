@@ -155,3 +155,12 @@ justamente para que las dos puntas convivan sin pisarse.
 
    **Lo que ningún test puede atrapar es una función nueva adentro de una
    pantalla que ya tenía paso.** Para eso está esta regla escrita.
+7. **El idioma de la plata se controla con `docs/lenguaje-saldos.md`.** Acordado
+   el 06/10. Ahí está el inventario completo de dónde dice "saldo" (lo que debe
+   un comercio) y dónde se sigue diciendo "deber" (lo que debe Pablo a un
+   proveedor), con el recorrido de control para pasar antes de un deploy.
+
+   Si un lote toca una de esas etiquetas, **se actualiza ese documento en el
+   mismo lote**. Si queda viejo, la próxima vez hay que rehacer el inventario
+   desde cero — que es lo que pasó la primera vez y por eso quedaron textos sin
+   cambiar.

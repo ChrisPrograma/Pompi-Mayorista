@@ -111,7 +111,7 @@ describe('el feed junta todo en una sola tira', () => {
 
     const cobro = actividades(e)[0]!;
     expect(cobro.conQuien).toBe('Pet Shop Huellitas');
-    expect(cobro.detalle).toBe('Te pagó una deuda');
+    expect(cobro.detalle).toBe('Te pagó un saldo');
     expect(cobro.estado).toBe('transferencia');
     expect(cobro.montoCent).toBe(pesos(5000));
   });

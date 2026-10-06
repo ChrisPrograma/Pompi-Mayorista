@@ -179,7 +179,7 @@ export const ORDENES_CLIENTE: { id: OrdenCliente; texto: string }[] = [
   { id: 'nombre', texto: 'Nombre' },
   { id: 'ubicacion', texto: 'Ubicación' },
   { id: 'rubro', texto: 'Rubro' },
-  { id: 'deuda', texto: 'Deuda' },
+  { id: 'deuda', texto: 'Saldo' },
 ];
 
 export const DIRECCION_INICIAL_CLIENTE: Record<OrdenCliente, Direccion> = {

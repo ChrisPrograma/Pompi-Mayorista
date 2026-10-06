@@ -103,12 +103,12 @@ export const RECORRIDO: PasoRecorrido[] = [
   {
     ruta: 'hoy', destaca: 'resumen',
     titulo: 'Todo arranca acá',
-    texto: 'Arriba, siempre a la vista: cuánta plata cobraste hoy y cuánta tenés en la calle. Son los dos números que importan.',
+    texto: 'Arriba, siempre a la vista: cuánta plata cobraste hoy y cuánto saldo tenés en la calle. Son los dos números que importan.',
   },
   {
     ruta: 'hoy', destaca: 'misiones',
     titulo: 'Tu día en 2 pasos',
-    texto: 'Hacer una venta y cobrar una deuda. En vez de explicarte cómo se usa, la app te va marcando qué falta.',
+    texto: 'Hacer una venta y cobrar un saldo. En vez de explicarte cómo se usa, la app te va marcando qué falta.',
   },
 
   // --- vender -------------------------------------------------------------
@@ -120,7 +120,7 @@ export const RECORRIDO: PasoRecorrido[] = [
   {
     ruta: 'vender', destaca: 'lista-clientes',
     titulo: 'Primero: a quién le vendés',
-    texto: 'Tus comercios con la deuda al lado. Si uno te debe hace 40 días, lo ves antes de venderle otra vez.',
+    texto: 'Tus comercios con el saldo al lado. Si uno tiene saldo de hace 40 días, lo ves antes de venderle otra vez.',
   },
   {
     ruta: 'vender', destaca: 'cliente-nuevo',
@@ -145,7 +145,7 @@ export const RECORRIDO: PasoRecorrido[] = [
   {
     ruta: 'vender', ventaEnCurso: true,
     titulo: 'Y por último: cómo te paga',
-    texto: 'Tres opciones: te paga el total, te paga una parte, o te lo debe todo. Si te da una parte, escribís cuánto y el resto va solo a su cuenta.',
+    texto: 'Tres opciones: te paga el total, te paga una parte, o queda todo como saldo. Si te da una parte, escribís cuánto y el resto va solo a su saldo.',
   },
 
   // --- lo que pasó, y el comprobante --------------------------------------
@@ -162,19 +162,19 @@ export const RECORRIDO: PasoRecorrido[] = [
   {
     ruta: 'actividad', destaca: 'filtros-actividad',
     titulo: 'Si lo anotaste mal, se corrige',
-    texto: 'Desde el detalle de una venta o de una entrada. Si erraste la cantidad o el costo, "Corregir" lo arregla de una; si directamente no fue, "Anular" devuelve el stock, la deuda y la plata. No se borra nada: queda tachado en su día.',
+    texto: 'Desde el detalle de una venta o de una entrada. Si erraste la cantidad o el costo, "Corregir" lo arregla de una; si directamente no fue, "Anular" devuelve el stock, el saldo y la plata. No se borra nada: queda tachado en su día.',
   },
 
   // --- cobrar -------------------------------------------------------------
   {
     ruta: 'hoy', destaca: 'alerta',
     titulo: 'Y te avisa sin que preguntes',
-    texto: 'Cuando un comercio se pasa de tiempo, el aviso aparece solo en el inicio, con el nombre, cuántos días hace y cuánto es. Si ahora no ves ninguno, es porque no hay ninguna deuda vieja.',
+    texto: 'Cuando un comercio se pasa de tiempo, el aviso aparece solo en el inicio, con el nombre, cuántos días hace y cuánto es. Si ahora no ves ninguno, es porque no hay ningún saldo viejo.',
   },
   {
     ruta: 'deudas', destaca: 'lista-deudas',
-    titulo: 'Quién te debe, del más viejo al más nuevo',
-    texto: 'Ese es el orden en el que conviene salir a cobrar. Tocás un comercio y anotás lo que te dio, sea todo o una parte. Y ahí mismo ves de qué ventas viene esa deuda, por si te lo pregunta.',
+    titulo: 'El saldo de cada comercio, del más viejo al más nuevo',
+    texto: 'Ese es el orden en el que conviene salir a cobrar. Tocás un comercio y anotás lo que te dio, sea todo o una parte. Y ahí mismo ves de qué ventas viene ese saldo, por si te lo pregunta.',
   },
 
   // --- mercadería y gastos ------------------------------------------------
@@ -223,7 +223,7 @@ export const RECORRIDO: PasoRecorrido[] = [
   {
     ruta: 'clientes', destaca: 'lista-clientes-todos',
     titulo: 'La ficha de cada comercio',
-    texto: 'Lo que te debe, cuándo lo visitás, su teléfono, sus últimas ventas, y el producto que más se lleva. Si dejás de venderle se archiva, pero su historial no se borra nunca.',
+    texto: 'Su saldo, cuándo lo visitás, su teléfono, sus últimas ventas, y el producto que más se lleva. Si dejás de venderle se archiva, pero su historial no se borra nunca.',
   },
   {
     ruta: 'proveedores', destaca: 'lista-proveedores-todos',
@@ -240,7 +240,7 @@ export const RECORRIDO: PasoRecorrido[] = [
   {
     ruta: 'numeros', destaca: 'reportes',
     titulo: 'Y la plata que se movió',
-    texto: 'La caja es otra cosa que la ganancia, y las dos importan: una venta a cuenta te deja ganancia y no te pone un peso en el bolsillo. Acá abajo abrís cada cosa en detalle —la caja, los productos, los gastos, lo que te deben y el stock— y cualquiera se baja a Excel.',
+    texto: 'La caja es otra cosa que la ganancia, y las dos importan: una venta a cuenta te deja ganancia y no te pone un peso en el bolsillo. Acá abajo abrís cada cosa en detalle —la caja, los productos, los gastos, los saldos a cobrar y el stock— y cualquiera se baja a Excel.',
   },
   {
     ruta: 'hoy',

@@ -625,8 +625,8 @@ export const App = () => {
                { etiqueta: 'Productos', valor: `${unidades} u.` }]
             : v.cobradoCent > 0
               ? [{ etiqueta: 'Cobraste', valor: plata(v.cobradoCent) },
-                 { etiqueta: 'Ahora te debe', valor: plata(saldo + quedaDebiendo) }]
-              : [{ etiqueta: 'Ahora te debe', valor: plata(saldo + quedaDebiendo) },
+                 { etiqueta: 'Saldo del comercio', valor: plata(saldo + quedaDebiendo) }]
+              : [{ etiqueta: 'Saldo del comercio', valor: plata(saldo + quedaDebiendo) },
                  { etiqueta: 'Productos', valor: `${unidades} u.` }],
         // La venta ya está aplicada al estado, pero `estado` en esta función es
         // el de antes: el recibo se arma con la venta, que se basta sola.
@@ -805,7 +805,7 @@ export const App = () => {
       setExito({
         titulo: 'Comercio agregado',
         monto: c.nombre,
-        texto: 'Ya podés venderle y llevarle la cuenta de lo que te deba.',
+        texto: 'Ya podés venderle y llevarle el saldo.',
         deltas: [{ etiqueta: 'Tus comercios', valor: String(estado.clientes.filter((x) => x.activo).length + 1) }],
       });
     }
@@ -829,7 +829,7 @@ export const App = () => {
       setExito({
         titulo: 'Comercio archivado',
         monto: r.clientes![0].nombre,
-        texto: 'No te aparece más para venderle. Sus ventas y su deuda siguen en el historial: nada se borró.',
+        texto: 'No te aparece más para venderle. Sus ventas y su saldo siguen en el historial: nada se borró.',
         deltas: [{ etiqueta: 'Se puede reactivar', valor: 'sí' }],
       });
     }
@@ -1175,10 +1175,10 @@ export const App = () => {
       monto: plata(venta.totalCent),
       texto: venta.cobradoCent > 0
         ? `La mercadería volvió al stock y ${plata(venta.cobradoCent)} salieron de la caja de hoy.`
-        : 'La mercadería volvió al stock y la venta ya no figura como deuda.',
+        : 'La mercadería volvió al stock y la venta ya no figura en el saldo del comercio.',
       deltas: [
         { etiqueta: 'Volvieron al stock', valor: `${unidades} u.` },
-        { etiqueta: 'Ahora te debe', valor: plata(deudaDespues) },
+        { etiqueta: 'Saldo del comercio', valor: plata(deudaDespues) },
       ],
     });
   };
@@ -1207,9 +1207,9 @@ export const App = () => {
     setExito({
       titulo: '¡Cobrado!', monto: plata(montoCent),
       texto: saldo - montoCent > 0
-        ? `${cliente?.nombre} todavía te debe ${plata(saldo - montoCent)}.`
-        : `${cliente?.nombre} quedó al día con vos.`,
-      deltas: [{ etiqueta: 'Te siguen debiendo', valor: plata(Math.max(0, deudas.totalCent - montoCent)) }],
+        ? `A ${cliente?.nombre} le queda un saldo de ${plata(saldo - montoCent)}.`
+        : `${cliente?.nombre} quedó sin saldo.`,
+      deltas: [{ etiqueta: 'Saldo total en la calle', valor: plata(Math.max(0, deudas.totalCent - montoCent)) }],
     });
   };
 
@@ -1430,7 +1430,7 @@ export const App = () => {
                       </span>
                       <span className="row-end">
                         <b>{plata(x.debeCent)}</b>
-                        <span>debe</span>
+                        <span>saldo</span>
                       </span>
                       <Icono id="i-arrow" clase="ico-s ico-arrow" />
                     </button>
@@ -1625,7 +1625,7 @@ export const App = () => {
             <h3>{editando ? 'Datos del comercio' : 'Comercio nuevo'}</h3>
             <p className="sub">
               {editando
-                ? 'Cambiá lo que haga falta. Sus ventas y su deuda no se tocan.'
+                ? 'Cambiá lo que haga falta. Sus ventas y su saldo no se tocan.'
                 : 'Con el nombre alcanza. El resto lo completás cuando tengas tiempo.'}
             </p>
 
@@ -2075,7 +2075,7 @@ export const App = () => {
             <div className="kpi">
               <div>
                 <b>{d ? plata(d.saldoCent) : '$ 0'}</b>
-                <span>{d ? `te debe hace ${d.dias} días` : 'está al día'}</span>
+                <span>{d ? `de saldo, hace ${d.dias} días` : 'sin saldo'}</span>
               </div>
               <div>
                 <b style={{ fontSize: c.contacto ? 18 : undefined }}>{c.contacto ?? '—'}</b>
@@ -2137,7 +2137,7 @@ export const App = () => {
                         <b>{plata(x.totalCent)}</b>
                         <span>
                           {x.anulada ? 'anulada'
-                            : x.debeCent > 0 ? `debe ${plata(x.debeCent)}` : 'cobrada'}
+                            : x.debeCent > 0 ? `saldo ${plata(x.debeCent)}` : 'cobrada'}
                         </span>
                       </span>
                       <Icono id="i-arrow" clase="ico-s ico-arrow" />

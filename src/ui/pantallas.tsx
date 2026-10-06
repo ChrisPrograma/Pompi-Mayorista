@@ -437,7 +437,7 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
         <ul className="mis-list">
           {([
             ['venta', 'Hacer una venta', 'vender'],
-            ['cobro', 'Cobrar una deuda', 'deudas'],
+            ['cobro', 'Cobrar un saldo', 'deudas'],
           ] as const).map(([k, texto, destino]) => (
             <li key={k} className={v.misiones[k] ? 'done' : ''}>
               <span className="tick"><Icono id="i-check" clase="ico-s" /></span>
@@ -468,8 +468,8 @@ export const PantallaHoy = ({ estado, hoy, acc }: Props) => {
                 </span>
                 <span className="row-end">
                   {c.saldoCent > 0
-                    ? <span className="pill warn">debe {plataCorta(c.saldoCent)}</span>
-                    : <span className="pill ok">al día</span>}
+                    ? <span className="pill warn">saldo {plataCorta(c.saldoCent)}</span>
+                    : <span className="pill ok">sin saldo</span>}
                 </span>
               </div>
             ))}
@@ -826,8 +826,8 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
                 <span className="row-main"><b>{c.nombre}</b><span>{c.zona}</span></span>
                 <span className="row-end">
                   {d ? <span className={`pill ${d.antiguedad === 'muy_atrasado' ? 'bad' : 'warn'}`}>
-                    debe {plataCorta(d.saldoCent)}</span>
-                    : <span className="pill ok">al día</span>}
+                    saldo {plataCorta(d.saldoCent)}</span>
+                    : <span className="pill ok">sin saldo</span>}
                 </span>
               </button>
             );
@@ -854,8 +854,8 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
         <Alerta tipo={d ? 'warn' : 'ok'} icono={d ? 'i-alert' : 'i-check'}
           titulo={cliente?.nombre ?? ''}
           texto={d
-            ? `Ojo: ya te debe ${plata(d.saldoCent)} de hace ${d.dias} días.`
-            : 'Está al día con vos.'}
+            ? `Ojo: ya tiene un saldo de ${plata(d.saldoCent)}, de hace ${d.dias} días.`
+            : 'No tiene saldo pendiente.'}
           accion={{ texto: 'Cambiar', alTocar: () => setPaso(1) }} />
 
         <p className="eyebrow">Qué le vendés</p>
@@ -944,7 +944,7 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
    * o sea el sistema diciéndole que él le debe plata al comercio.
    *
    * El botón se bloquea solo en los dos casos en que el número no quiere decir
-   * nada: cero (ahí la opción correcta es "me lo debe todo") y el total exacto
+   * nada: cero (ahí la opción correcta es "queda todo como saldo") y el total exacto
    * (ahí es "me paga el total"). No es rigor por el rigor — si dejara pasar un
    * parcial de cero, la venta quedaría igual que una a cuenta pero anotada como
    * pago parcial, y el comprobante diría dos cosas distintas.
@@ -953,7 +953,7 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
   const restoCent = Math.max(0, total - entregaCent);
   const avisoParcial =
     forma !== 'parte' || !entrega.trim() ? null
-      : entregaCent <= 0 ? 'Poné cuánto te entrega. Si no te paga nada, elegí "Me lo debe todo".'
+      : entregaCent <= 0 ? 'Poné cuánto te entrega. Si no te paga nada, elegí "Queda todo como saldo".'
       : restoCent === 0 ? 'Te está pagando todo. Para eso está "Me paga el total".'
       : null;
   const puedeCerrar =
@@ -991,8 +991,8 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
       <div className="stack">
         {([
           ['total', 'i-cash', 'Me paga el total', 'Registra el cobro completo de la venta', false],
-          ['parte', 'i-split', 'Me paga una parte', 'Ingresás lo que te entrega y el resto va a deuda', false],
-          ['debe', 'i-clock', 'Me lo debe todo', 'El total se suma a su cuenta corriente', true],
+          ['parte', 'i-split', 'Me paga una parte', 'Ingresás lo que te entrega y el resto queda como saldo', false],
+          ['debe', 'i-clock', 'Queda todo como saldo', 'El total se suma al saldo del comercio', true],
         ] as const).map(([valor, icono, titulo, sub, esDeuda]) => (
           <div key={valor}>
             <button className={`pay-opt ${esDeuda ? 'debt' : ''}`}
@@ -1054,21 +1054,21 @@ export const PantallaDeudas = ({ estado, hoy, acc }: Props) => {
   return (
     <div className="view">
       <div className="hero-n">
-        <span>En la calle tenés</span>
+        <span>Saldo total en la calle</span>
         <b>{plata(v.totalCent)}</b>
         <em>repartidos en {v.lista.length} comercios</em>
       </div>
 
-      <div className="section-h"><h2>Quién te debe</h2><span className="hint">de más viejo a más nuevo</span></div>
+      <div className="section-h"><h2>Saldo por comercio</h2><span className="hint">de más viejo a más nuevo</span></div>
       <div className="stack" {...tour('lista-deudas')}>
         {/* Con cero comercios, "cobraste todo" sería un elogio por no haber vendido. */}
         {v.lista.length === 0 && (
           estado.clientes.filter((c) => c.activo).length === 0 ? (
             <Alerta tipo="ok" icono="i-store" titulo="Todavía no tenés comercios cargados"
-              texto="Acá vas a ver quién te debe y desde cuándo, ordenado de la deuda más vieja a la más nueva."
+              texto="Acá vas a ver el saldo de cada comercio y desde cuándo lo tiene, del más viejo al más nuevo."
               accion={{ texto: 'Cargar', alTocar: () => acc.ir('clientes') }} />
           ) : (
-            <Alerta tipo="ok" icono="i-check" titulo="No te debe nadie"
+            <Alerta tipo="ok" icono="i-check" titulo="Ningún comercio tiene saldo"
               texto="Cobraste todo. Rarísimo y hermoso." />
           )
         )}
@@ -1090,7 +1090,7 @@ export const PantallaDeudas = ({ estado, hoy, acc }: Props) => {
 
       {v.alDia.length > 0 && (
         <>
-          <div className="section-h"><h2>Al día</h2><span className="hint">{v.alDia.length} comercios</span></div>
+          <div className="section-h"><h2>Sin saldo</h2><span className="hint">{v.alDia.length} comercios</span></div>
           <div className="stack">
             {v.alDia.map((c) => (
               <div className="row" key={c.clienteId}>
@@ -1671,8 +1671,8 @@ export const PantallaClientes = ({ estado, hoy, acc }: Props) => {
               </span>
               <span className="row-end">
                 {d ? <span className={`pill ${d.antiguedad === 'muy_atrasado' ? 'bad' : 'warn'}`}>
-                  debe {plataCorta(d.saldoCent)}</span>
-                  : <span className="pill ok">al día</span>}
+                  saldo {plataCorta(d.saldoCent)}</span>
+                  : <span className="pill ok">sin saldo</span>}
               </span>
             </button>
           );
@@ -1882,11 +1882,11 @@ export const PantallaNumeros = ({ estado, hoy }: Props) => {
       return (
         <div className="view">
           {volver}
-          <div className="section-h"><h2>Lo que te deben</h2><span className="hint">a hoy</span></div>
+          <div className="section-h"><h2>Saldos a cobrar</h2><span className="hint">a hoy</span></div>
           <Alerta tipo="ok" icono="i-clock" titulo="Esto no depende del período"
-            texto="Una deuda es plata que está en la calle hoy, no algo que pasó en un mes, así que no cambia al cambiar de período. Acá se mira y se baja a Excel; para cobrar, la pantalla es Saldo." />
+            texto="Un saldo es plata que está en la calle hoy, no algo que pasó en un mes, así que no cambia al cambiar de período. Acá se mira y se baja a Excel; para cobrar, la pantalla es Saldo." />
           {deudas.length === 0
-            ? <Alerta tipo="ok" icono="i-check" titulo="No te debe nadie" texto="Está todo cobrado." />
+            ? <Alerta tipo="ok" icono="i-check" titulo="Ningún comercio tiene saldo" texto="Está todo cobrado." />
             : (
               <div className="lista">
                 {deudas.map((d) => (
@@ -1972,7 +1972,7 @@ export const PantallaNumeros = ({ estado, hoy }: Props) => {
       pie: `${gastos.length} ${gastos.length === 1 ? 'gasto' : 'gastos'}`,
     },
     {
-      id: 'cobrar', titulo: 'Lo que te deben', icono: 'i-wallet',
+      id: 'cobrar', titulo: 'Saldos a cobrar', icono: 'i-wallet',
       monto: plata(deudas.reduce((a, d) => a + d.saldoCent, 0)),
       pie: 'a hoy',
     },

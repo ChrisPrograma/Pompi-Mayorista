@@ -88,6 +88,7 @@ describe('el recorrido apunta a cosas que existen', () => {
       'caja',          // la caja real, en Números
       'buscá',         // el buscador del pedido y de las listas
       'stock',         // el stock al lado de cada producto
+      'saldo',         // la plata que un comercio todavía no pagó
       'sin señal',     // que funciona sin conexión
     ]) {
       expect(todo).toContain(palabra);

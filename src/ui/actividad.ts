@@ -225,7 +225,7 @@ export const actividades = (e: EstadoApp): Actividad[] => {
       tipo: 'cobro',
       cuando: p.fecha,
       conQuien: nombreCliente(e, p.clienteId),
-      detalle: 'Te pagó una deuda',
+      detalle: 'Te pagó un saldo',
       estado: MEDIO[p.medio] ?? 'cobrado',
       montoCent: p.montoCent,
       direccion: 'entra',
