@@ -137,3 +137,21 @@ justamente para que las dos puntas convivan sin pisarse.
 4. **Nada de `drop` ni `delete`** sin hablarlo antes.
 5. **Ninguna prueba contra la base real** que deje un asiento en la contabilidad
    del negocio.
+6. **El recorrido guiado se revisa en cada lote.** Acordado el 01/10. Si un lote
+   agrega, saca o cambia una función que el cliente usa, en ese mismo lote se
+   toca `src/ui/recorrido.ts` — no "más adelante".
+
+   El botón *"Ver cómo funciona, paso a paso"* del inicio es **la única
+   documentación que el cliente lee**, y es la que más fácil se despega: nadie la
+   abre trabajando, así que puede quedar meses describiendo una app que no es la
+   que tiene adelante. Ya pasó una vez y hubo que reescribirla entera el 21/09.
+
+   Dos tests obligan a decidir, pero no alcanzan solos:
+
+   - `cada pantalla está en el recorrido o exenta a propósito` — agregar una
+     pantalla y no decidir qué hacer con ella pone el test en rojo.
+   - `todas las anclas declaradas se usan` — un lugar marcado para el recorrido
+     que ningún paso señala es una parte de la app que el recorrido no cuenta.
+
+   **Lo que ningún test puede atrapar es una función nueva adentro de una
+   pantalla que ya tenía paso.** Para eso está esta regla escrita.

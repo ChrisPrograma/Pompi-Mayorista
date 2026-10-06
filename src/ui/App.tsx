@@ -54,7 +54,7 @@ import {
 
 const TABS: { id: Ruta; icono: string; texto: string; venta?: boolean }[] = [
   { id: 'hoy', icono: 'i-home', texto: 'Hoy' },
-  { id: 'deudas', icono: 'i-wallet', texto: 'Me deben' },
+  { id: 'deudas', icono: 'i-wallet', texto: 'Saldo' },
   { id: 'vender', icono: 'i-cart', texto: 'Vender', venta: true },
   { id: 'cosas', icono: 'i-box', texto: 'Mis cosas' },
   { id: 'numeros', icono: 'i-chart', texto: 'Números' },
@@ -1353,7 +1353,7 @@ export const App = () => {
                 .reduce((a, p) => a + p.montoCent, 0),
             )}</b>
           </div>
-          <div className="mtile"><span>Me deben</span><b className="num">{plata(deudas.totalCent)}</b></div>
+          <div className="mtile"><span>Saldo</span><b className="num">{plata(deudas.totalCent)}</b></div>
         </div>
       </header>
 
@@ -1708,7 +1708,7 @@ export const App = () => {
         const debe = Math.max(0, v.totalCent - v.cobradoCent);
         const estadoCobro = v.anuladaEn
           ? 'Anulada'
-          : debe === 0 ? 'Cobrado' : v.cobradoCent > 0 ? 'Pago parcial' : 'Queda en cuenta';
+          : debe === 0 ? 'Cobrado' : v.cobradoCent > 0 ? 'Pago parcial' : 'Saldo';
 
         return (
           <Hoja alCerrar={() => setFichaVenta(null)}>
@@ -1752,7 +1752,7 @@ export const App = () => {
               </div>
               {debe > 0 && (
                 <div className={`tot-fila ${v.anuladaEn ? '' : 'debe'}`}>
-                  <span>{v.anuladaEn ? 'Quedaba debiendo' : 'Queda debiendo'}</span>
+                  <span>{v.anuladaEn ? 'Saldo anterior' : 'Saldo'}</span>
                   <b className="num">{plata(debe)}</b>
                 </div>
               )}

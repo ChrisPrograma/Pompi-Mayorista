@@ -97,7 +97,7 @@ export const resumenDelRecibo = (d: DatosRecibo): string[] => {
   lineas.push(`Total: ${formatear(d.totalCent)}`);
   lineas.push(`${esVenta ? 'Pagó' : 'Le pagaste'}: ${formatear(d.pagadoCent)}`);
   if (d.saldoCent > 0) {
-    lineas.push(`${esVenta ? 'Queda debiendo' : 'Queda a pagar'}: ${formatear(d.saldoCent)}`);
+    lineas.push(`${esVenta ? 'Saldo' : 'Queda a pagar'}: ${formatear(d.saldoCent)}`);
   }
   lineas.push(estadoDelRecibo(d));
 
@@ -109,7 +109,7 @@ export const estadoDelRecibo = (d: DatosRecibo): string => {
   if (d.anuladaEn) return 'ANULADO';
   if (d.saldoCent <= 0) return 'PAGADO';
   if (d.pagadoCent > 0) return 'PAGO PARCIAL';
-  return d.tipo === 'venta' ? 'QUEDA EN CUENTA' : 'QUEDA A PAGAR';
+  return d.tipo === 'venta' ? 'SALDO' : 'QUEDA A PAGAR';
 };
 
 /*
@@ -314,7 +314,7 @@ export const dibujarRecibo = (d: DatosRecibo): HTMLCanvasElement => {
   fila('Total', formatear(d.totalCent), true);
   fila(esVenta ? 'Pagó' : 'Le pagaste', formatear(d.pagadoCent), false, MARCA);
   if (d.saldoCent > 0) {
-    fila(esVenta ? 'Queda debiendo' : 'Queda a pagar', formatear(d.saldoCent), false, DEUDA);
+    fila(esVenta ? 'Saldo' : 'Queda a pagar', formatear(d.saldoCent), false, DEUDA);
   }
 
   // ---- estado -------------------------------------------------------------

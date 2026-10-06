@@ -124,7 +124,7 @@ export const actividades = (e: EstadoApp): Actividad[] => {
       estado: anulada ? 'anulada'
         : v.cobradoCent >= v.totalCent ? 'cobrado'
         : v.cobradoCent > 0 ? 'pagó parte'
-        : 'te lo debe',
+        : 'saldo',
       montoCent: v.totalCent,
       // Una venta anulada no entró: por eso no lleva flecha ni signo.
       direccion: anulada ? null : 'entra',

@@ -261,7 +261,7 @@ describe('el texto del comprobante', () => {
 
     expect(estadoDelRecibo(vta({}))).toBe('PAGADO');
     expect(estadoDelRecibo(vta({ pagadoCent: pesos(400), saldoCent: pesos(600) }))).toBe('PAGO PARCIAL');
-    expect(estadoDelRecibo(vta({ pagadoCent: 0, saldoCent: pesos(1000) }))).toBe('QUEDA EN CUENTA');
+    expect(estadoDelRecibo(vta({ pagadoCent: 0, saldoCent: pesos(1000) }))).toBe('SALDO');
     expect(estadoDelRecibo(vta({ tipo: 'ingreso', pagadoCent: 0, saldoCent: pesos(1000) }))).toBe('QUEDA A PAGAR');
     // Una venta cobrada y después anulada dice ANULADO, no PAGADO.
     expect(estadoDelRecibo(vta({ anuladaEn: HOY }))).toBe('ANULADO');

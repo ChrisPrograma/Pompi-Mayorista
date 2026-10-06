@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { ANCLAS, RECORRIDO, tour } from '../../ui/recorrido.ts';
+import { ANCLAS, RECORRIDO, SIN_PASO_PROPIO, tour } from '../../ui/recorrido.ts';
 /*
  * La lista de verdad, importada — no copiada. Copiada, agregar una pantalla y
  * olvidarse de actualizarla deja este test pasando mientras miente.
@@ -69,10 +69,67 @@ describe('el recorrido apunta a cosas que existen', () => {
   });
 
   it('nombra las funciones que sí están', () => {
+    /*
+     * Una palabra por función que el cliente usa. No es un adorno: si alguien
+     * saca una función y se olvida del recorrido, o al revés —agrega una y no la
+     * cuenta—, esta lista es lo que lo pone en rojo.
+     *
+     * Se actualiza en el mismo lote que la función. Agregar acá una palabra de
+     * algo que todavía no existe es tan malo como no agregarla cuando existe.
+     */
     const todo = RECORRIDO.map((p) => `${p.titulo} ${p.texto}`).join(' ').toLowerCase();
-    for (const palabra of ['comprobante', 'anula', 'parte', 'sin señal']) {
+    for (const palabra of [
+      'comprobante',   // mandar el recibo por WhatsApp
+      'anula',         // anular una venta o una entrada
+      'corregir',      // corregir una entrada o un costo
+      'parte',         // el cobro parcial
+      'gasto',         // los gastos operativos
+      'excel',         // exportar la planilla y los reportes
+      'caja',          // la caja real, en Números
+      'buscá',         // el buscador del pedido y de las listas
+      'stock',         // el stock al lado de cada producto
+      'sin señal',     // que funciona sin conexión
+    ]) {
       expect(todo).toContain(palabra);
     }
+  });
+
+  it('cada pantalla está en el recorrido o exenta a propósito', () => {
+    /*
+     * EL GUARDA QUE PIDIÓ MACLARENS EL 01/10.
+     *
+     * Agregar una pantalla nueva y olvidarse del recorrido deja al cliente con
+     * una función que no sabe que existe. Acá no se puede: o la pantalla tiene
+     * un paso, o está declarada en `SIN_PASO_PROPIO` con el motivo escrito al
+     * lado. Las dos salidas son válidas; lo que no es válido es no decidir.
+     *
+     * Lo que este test NO puede atrapar es una función nueva adentro de una
+     * pantalla que ya tenía paso. Para eso está la regla 5 del encabezado de
+     * `recorrido.ts` y la lista de palabras del test de arriba.
+     */
+    const visitadas = new Set(RECORRIDO.map((p) => p.ruta));
+    const sinDecidir = RUTAS.filter(
+      (r) => !visitadas.has(r) && !SIN_PASO_PROPIO.includes(r),
+    );
+
+    expect(sinDecidir).toEqual([]);
+  });
+
+  it('nadie quedó exento de más', () => {
+    // Una pantalla exenta que además tiene paso es una lista que se despegó.
+    const visitadas = new Set(RECORRIDO.map((p) => p.ruta));
+    expect(SIN_PASO_PROPIO.filter((r) => visitadas.has(r))).toEqual([]);
+  });
+
+  it('todas las anclas declaradas se usan', () => {
+    /*
+     * Un ancla existe para que un paso la señale. Una declarada y nunca usada es
+     * una marca puesta en una pantalla para un paso que después se borró, o —lo
+     * que pasó con el capital y las dos salidas de Mis productos— una parte de
+     * la app que el recorrido nunca llegó a contar.
+     */
+    const usadas = new Set(RECORRIDO.map((p) => p.destaca).filter(Boolean));
+    expect(ANCLAS.filter((a) => !usadas.has(a))).toEqual([]);
   });
 });
 

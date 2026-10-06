@@ -19,6 +19,15 @@
  *  4. Lo que pasa adentro de una hoja o un modal se CUENTA en el texto del paso
  *     de la pantalla que lo abre: el recorrido navega entre pantallas, no puede
  *     resaltar algo que todavía no está dibujado.
+ *  5. **REVISAR ESTE ARCHIVO ES PARTE DE CADA CAMBIO.** Acordado con Maclarens el
+ *     01/10. Si un lote agrega, saca o cambia una función que el cliente usa, en
+ *     ese mismo lote se toca el recorrido — no "más adelante". El recorrido es la
+ *     única documentación que el cliente lee, y es la que más fácil se despega
+ *     porque nadie la abre trabajando. Ya pasó una vez y hubo que reescribirlo
+ *     entero. El test `cada pantalla está en el recorrido o exenta a propósito`
+ *     obliga a tomar la decisión cuando se agrega una pantalla; el resto —una
+ *     función nueva adentro de una pantalla que ya existe— no lo puede atrapar
+ *     ningún test, y por eso está escrito acá.
  *
  * Es data, no código: agregar un paso es agregar una línea acá.
  *
@@ -49,9 +58,10 @@ export const ANCLAS = [
   'resumen', 'misiones', 'alerta', 'vender-ya', 'me-llego', 'cargar-gasto',
   'ultimas-actividades', 'filtros-actividad',
   'lista-clientes', 'cliente-nuevo', 'lista-productos', 'buscador-venta',
-  'lista-deudas', 'lista-proveedores', 'hub',
+  'lista-deudas', 'hub',
   'producto-nuevo', 'lista-productos-todos', 'buscador',
-  'lista-clientes-todos', 'lista-proveedores-todos', 'ganancia', 'reportes',
+  'lista-clientes-todos', 'lista-proveedores-todos', 'capital', 'salidas',
+  'ganancia', 'reportes',
 ] as const;
 
 export type Ancla = (typeof ANCLAS)[number];
@@ -64,6 +74,20 @@ export type Ancla = (typeof ANCLAS)[number];
  * nombre ya no es un texto suelto que nadie revisa.
  */
 export const tour = (ancla: Ancla): { 'data-tour': Ancla } => ({ 'data-tour': ancla });
+
+/**
+ * Pantallas que NO tienen un paso propio, y por qué.
+ *
+ * Las dos son formularios a los que se entra desde un botón del inicio, y ese
+ * botón SÍ tiene su paso. Abrirlas con el recorrido encendido mostraría un
+ * formulario vacío con una tarjeta encima tapándolo: se explica mejor señalando
+ * el botón y contando en el texto qué pasa cuando lo toca.
+ *
+ * Esta lista no es decorativa: hay un test que exige que cada pantalla de la app
+ * esté en el recorrido O acá. Agregar una pantalla nueva y no decidir qué hacer
+ * con ella pone el test en rojo, que es justamente lo que tiene que pasar.
+ */
+export const SIN_PASO_PROPIO: Ruta[] = ['gasto', 'ingreso'];
 
 export interface PasoRecorrido {
   ruta: Ruta;
@@ -106,52 +130,63 @@ export const RECORRIDO: PasoRecorrido[] = [
   {
     ruta: 'vender', destaca: 'lista-productos', ventaEnCurso: true,
     titulo: 'Segundo: qué se lleva',
-    texto: 'Todo lo que tengas con precio, con el stock al lado. Tocás más o menos y el total se arma solo. No hay que escribir precios.',
+    texto: 'Todo lo que tengas con precio, con el stock al lado. Tocás más o menos, o escribís la cantidad directamente, y el total se arma solo. No hay que escribir precios.',
+  },
+  {
+    ruta: 'vender', destaca: 'buscador-venta', ventaEnCurso: true,
+    titulo: 'Con muchos productos, buscalo',
+    texto: 'Escribí un pedazo del nombre o el código y la lista se achica sola. Lo que ya cargaste NO se pierde: podés buscar otra cosa, agregarla, y los dos siguen en el pedido.',
   },
   {
     ruta: 'vender', ventaEnCurso: true,
-    titulo: 'Tercero: cómo te paga',
+    titulo: 'Y si te vas de la pantalla, tampoco',
+    texto: 'El pedido a medio armar queda guardado en el teléfono. Podés ir a mirar un producto, atender a alguien, hasta cerrar la app: al volver a Vender está todo como lo dejaste.',
+  },
+  {
+    ruta: 'vender', ventaEnCurso: true,
+    titulo: 'Y por último: cómo te paga',
     texto: 'Tres opciones: te paga el total, te paga una parte, o te lo debe todo. Si te da una parte, escribís cuánto y el resto va solo a su cuenta.',
   },
 
-  // --- el comprobante -----------------------------------------------------
+  // --- lo que pasó, y el comprobante --------------------------------------
   {
     ruta: 'hoy', destaca: 'ultimas-actividades',
     titulo: 'Lo último que hiciste, todo junto',
-    texto: 'Ventas, cobros, entradas de mercadería y anulaciones, en el orden en que pasaron. Tocá cualquiera y se abre con el detalle y el botón para mandar el comprobante por WhatsApp.',
+    texto: 'Ventas, cobros, entradas de mercadería, gastos y anulaciones, en el orden en que pasaron. Tocá cualquiera y se abre con el detalle y el botón para mandar el comprobante por WhatsApp.',
   },
-
-  // --- gastos ---------------------------------------------------------------
   {
-    ruta: 'hoy', destaca: 'cargar-gasto',
-    titulo: 'La nafta, el flete, las bolsas',
-    texto: 'Todo lo que pagás para que el negocio funcione se carga acá, en diez segundos: cuánto fue, de qué, y listo. Es lo que hace que la ganancia que ves sea la de verdad y no una cuenta de más.',
+    ruta: 'actividad', destaca: 'filtros-actividad',
+    titulo: 'Todo el historial, cuando necesitás buscar',
+    texto: 'Entrás con "Consultar todas". Buscás por comercio o proveedor, y con las chapitas de arriba mirás solo las ventas, solo los cobros, solo los gastos, solo lo que entró o solo lo anulado.',
+  },
+  {
+    ruta: 'actividad', destaca: 'filtros-actividad',
+    titulo: 'Si lo anotaste mal, se corrige',
+    texto: 'Desde el detalle de una venta o de una entrada. Si erraste la cantidad o el costo, "Corregir" lo arregla de una; si directamente no fue, "Anular" devuelve el stock, la deuda y la plata. No se borra nada: queda tachado en su día.',
   },
 
   // --- cobrar -------------------------------------------------------------
   {
+    ruta: 'hoy', destaca: 'alerta',
+    titulo: 'Y te avisa sin que preguntes',
+    texto: 'Cuando un comercio se pasa de tiempo, el aviso aparece solo en el inicio, con el nombre, cuántos días hace y cuánto es. Si ahora no ves ninguno, es porque no hay ninguna deuda vieja.',
+  },
+  {
     ruta: 'deudas', destaca: 'lista-deudas',
     titulo: 'Quién te debe, del más viejo al más nuevo',
-    texto: 'Ese es el orden en el que conviene salir a cobrar. Tocás un comercio y anotás lo que te dio, sea todo o una parte.',
+    texto: 'Ese es el orden en el que conviene salir a cobrar. Tocás un comercio y anotás lo que te dio, sea todo o una parte. Y ahí mismo ves de qué ventas viene esa deuda, por si te lo pregunta.',
   },
 
-  // --- mercadería ---------------------------------------------------------
+  // --- mercadería y gastos ------------------------------------------------
   {
     ruta: 'hoy', destaca: 'me-llego',
     titulo: 'Cuando te llega mercadería',
     texto: 'Elegís el proveedor, marcás cuántas unidades entraron y con qué costo. El stock sube solo, y si le pagás después queda anotado lo que vos le debés.',
   },
   {
-    ruta: 'actividad', destaca: 'filtros-actividad',
-    titulo: 'Todo el historial, cuando necesitás buscar',
-    texto: 'Entrás con "Consultar todas". Buscás por comercio o proveedor, y con las chapitas de arriba mirás solo las ventas, solo los cobros, solo lo que entró o solo lo anulado.',
-  },
-
-  // --- corregir -----------------------------------------------------------
-  {
-    ruta: 'actividad', destaca: 'filtros-actividad',
-    titulo: 'Si algo lo anotaste mal, se anula',
-    texto: 'Desde el detalle de una venta o de una entrada. Vuelve el stock, la deuda y la plata a como estaban. No se borra nada: la operación queda tachada en su día y la anulación aparece en el día que la hiciste.',
+    ruta: 'hoy', destaca: 'cargar-gasto',
+    titulo: 'La nafta, el flete, las bolsas',
+    texto: 'Todo lo que pagás para que el negocio funcione se carga acá, en diez segundos: cuánto fue, de qué, y listo. Es lo que hace que la ganancia que ves sea la de verdad y no una cuenta de más.',
   },
 
   // --- lo tuyo ------------------------------------------------------------
@@ -161,6 +196,11 @@ export const RECORRIDO: PasoRecorrido[] = [
     texto: 'Tus productos, tus comercios y tus proveedores. De acá entrás a cargar, corregir o mirar cualquiera de los tres.',
   },
   {
+    ruta: 'productos', destaca: 'capital',
+    titulo: 'Cuánta plata tenés parada',
+    texto: 'Dos números arriba de tus productos: lo que te costó todo lo que tenés guardado, y lo que va a entrar si lo vendés entero. Si a alguno le falta el costo, te avisa: ese no suma.',
+  },
+  {
     ruta: 'productos', destaca: 'producto-nuevo',
     titulo: 'Tus productos los cargás vos',
     texto: 'Nombre y a cuánto lo vendés, nada más. Si ya tenés unidades en casa las cargás ahí con lo que te costaron, y la app te dice cuánto te queda limpio.',
@@ -168,12 +208,17 @@ export const RECORRIDO: PasoRecorrido[] = [
   {
     ruta: 'productos', destaca: 'lista-productos-todos',
     titulo: 'Y ves la ganancia de cada uno',
-    texto: 'Tocás un producto y ves qué te cuesta, a cuánto lo vendés y cuánto te queda por unidad. Desde ahí le cambiás el precio: el anterior queda guardado con su fecha.',
+    texto: 'Tocás un producto y ves qué te cuesta, a cuánto lo vendés y cuánto te queda por unidad. Desde ahí le cambiás el precio —el anterior queda guardado con su fecha— y también podés corregir el costo si lo cargaste mal.',
   },
   {
     ruta: 'productos', destaca: 'buscador',
     titulo: 'Buscar y ordenar',
     texto: 'Escribí un pedazo del nombre o el código y la lista se achica sola. También la podés ordenar por precio, por código o por rubro.',
+  },
+  {
+    ruta: 'productos', destaca: 'salidas',
+    titulo: 'Mandarles la lista, o abrirla en Excel',
+    texto: 'Dos botones, y llevan cosas distintas. La LISTA es lo que le mandás al comercio: código, nombre y precio, nada más. El EXCEL es para vos: ahí sí va el costo y el stock, y se baja a tu computadora.',
   },
   {
     ruta: 'clientes', destaca: 'lista-clientes-todos',
@@ -190,7 +235,7 @@ export const RECORRIDO: PasoRecorrido[] = [
   {
     ruta: 'numeros', destaca: 'ganancia',
     titulo: 'Lo que te quedó de verdad',
-    texto: 'No las ventas: la ganancia, ya descontado lo que te costó la mercadería Y los gastos del negocio. Arriba elegís el mes que querés mirar. Es el número que nadie sabe sin ponerse a hacer cuentas.',
+    texto: 'No las ventas: la ganancia, ya descontado lo que te costó la mercadería Y los gastos del negocio. Arriba elegís qué mirar: este mes, el mes pasado, o las fechas que vos quieras. Es el número que nadie sabe sin ponerse a hacer cuentas.',
   },
   {
     ruta: 'numeros', destaca: 'reportes',

@@ -1019,7 +1019,7 @@ export const PantallaVender = ({ estado, hoy, acc, clienteInicial }: Props) => {
                 <div className="parcial-cuentas">
                   <div><span>Te entrega</span><b className="num">{plata(entregaCent)}</b></div>
                   <div className={restoCent > 0 ? 'debe' : ''}>
-                    <span>Queda debiendo</span><b className="num">{plata(restoCent)}</b>
+                    <span>Saldo</span><b className="num">{plata(restoCent)}</b>
                   </div>
                 </div>
 
@@ -1245,7 +1245,7 @@ export const PantallaProductos = ({ estado, hoy, acc }: Props) => {
         */}
       {capital.productos > 0 && (
         <>
-          <div className="capital">
+          <div className="capital" {...tour('capital')}>
             <div className="fuerte">
               <b>{plata(capital.costoCent)}</b>
               <span>capital en productos</span>
@@ -1287,7 +1287,7 @@ export const PantallaProductos = ({ estado, hoy, acc }: Props) => {
         * cuál: la peor versión de esto sería que un día mande la equivocada.
         */}
       {conPrecio > 0 && (
-        <div className="salidas">
+        <div className="salidas" {...tour('salidas')}>
           <button className="btn outline" onClick={compartirLista} disabled={saliendo !== null}>
             <Icono id="i-share" clase="ico-s" />
             {saliendo === 'lista' ? 'Preparando…' : 'Compartir lista de precios'}
@@ -1384,7 +1384,7 @@ export const PantallaIngreso = ({ estado, acc, corrigiendo }: Props) => {
       <div className="view">
         <div className="steps"><i className="on" /><i /><i /></div>
         <div className="step-title"><span className="n">1</span><h2>¿Quién te trajo?</h2></div>
-        <div className="stack" {...tour('lista-proveedores')}>
+        <div className="stack">
           {/*
             * Sin esto la pantalla quedaba en blanco y sin salida: ni un botón
             * para agregar el proveedor, ni una explicación. Es justo el tipo de
@@ -1884,7 +1884,7 @@ export const PantallaNumeros = ({ estado, hoy }: Props) => {
           {volver}
           <div className="section-h"><h2>Lo que te deben</h2><span className="hint">a hoy</span></div>
           <Alerta tipo="ok" icono="i-clock" titulo="Esto no depende del período"
-            texto="Una deuda es plata que está en la calle hoy, no algo que pasó en un mes, así que no cambia al cambiar de período. Acá se mira y se baja a Excel; para cobrar, la pantalla es Me deben." />
+            texto="Una deuda es plata que está en la calle hoy, no algo que pasó en un mes, así que no cambia al cambiar de período. Acá se mira y se baja a Excel; para cobrar, la pantalla es Saldo." />
           {deudas.length === 0
             ? <Alerta tipo="ok" icono="i-check" titulo="No te debe nadie" texto="Está todo cobrado." />
             : (

@@ -6,3 +6,7 @@ dist/
 .DS_Store
 coverage/
 .vite/
+
+# Herramientas de un solo uso que se ejecutan en la carpeta y no son del
+# proyecto. Van acá para que, si quedan olvidadas, no terminen en el repo.
+ARREGLAR-*.bat
